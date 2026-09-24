@@ -10,7 +10,7 @@ import { notify } from "@/lib/notify";
 import { describeDestination, folderPathProblem, type OffsiteDestination, type OffsiteIndex, passphraseProblem } from "@/lib/offsite-core";
 import {
   addKey, copyServer, createLocalFromOffsite, currentKeyId, listWorldSnapshots, pruneRepository, readIndex, readSettingsSnapshot,
-  removeKey, repositoryExists, ResticError, restoreWorld, WRONG_PASSWORD, writeIndex, writeSettingsSnapshot,
+  isWrongPassword, removeKey, repositoryExists, restoreWorld, writeIndex, writeSettingsSnapshot,
 } from "@/lib/offsite-restic";
 import { offsiteSettings, type OffsiteSchedule, type OffsiteSettings, offsiteStatus, panelId, resetOffsiteStatus, saveOffsiteSettings, updateOffsiteStatus } from "@/lib/offsite-settings";
 import { generateSshKeyPair, hostKeyFingerprints, scanHostKey, targetFor } from "@/lib/offsite-targets";
@@ -114,7 +114,7 @@ function destinationError(error: unknown) {
 
 /** Whether the passphrase is wrong (restic finds no key it opens), as opposed to any other failure. */
 function wrongPassword(error: unknown) {
-  return error instanceof ResticError && (error.code === WRONG_PASSWORD || /wrong password|no key found/i.test(error.message));
+  return isWrongPassword(error);
 }
 
 /**

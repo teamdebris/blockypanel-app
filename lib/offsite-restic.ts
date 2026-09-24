@@ -70,10 +70,19 @@ export function directRunner(options: { binary?: string; env?: Record<string, st
 export async function repositoryExists(runner: Runner, repository: string, password: string, signal?: AbortSignal) {
   try { await runner.run(["cat", "config"], { repository, password, signal }); return true; }
   catch (error) {
-    if (error instanceof ResticError && error.code === NO_REPOSITORY) return false;
-    if (error instanceof ResticError && error.code === WRONG_PASSWORD) return true;
+    if (isNoRepository(error)) return false;
+    if (isWrongPassword(error)) return true;
     throw error;
   }
+}
+
+// restic before 0.17 exits with 1 for everything, so the messages are checked too.
+export function isNoRepository(error: unknown) {
+  return error instanceof ResticError && (error.code === NO_REPOSITORY || /repository does not exist|unable to open config file/i.test(error.message));
+}
+
+export function isWrongPassword(error: unknown) {
+  return error instanceof ResticError && (error.code === WRONG_PASSWORD || /wrong password or no key found/i.test(error.message));
 }
 
 /** Creates the index, opened by `panelPassword` and by the owner's passphrase as a second key. Returns the passphrase key's ID. */
