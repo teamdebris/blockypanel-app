@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+storage
+# Data of an install that lives in this folder (/opt/blocky-panel): worlds, backups, restic
+# passwords, and the account database must never reach the build context or an image layer.
+panel
+servers
+backups
+npm-debug.log*
+# Never bake secrets into image layers.
+.env
+.env.*
+!.env.example
