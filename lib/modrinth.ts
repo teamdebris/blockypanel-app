@@ -13,7 +13,7 @@ type ServerType = Parameters<typeof modrinthTarget>[0];
 
 const API = "https://api.modrinth.com/v2";
 // Modrinth asks every client to identify itself.
-const USER_AGENT = `blocky-panel/${packageJson.version} (+https://github.com/teamdebris/blocky-panel)`;
+const USER_AGENT = `blocky-panel/${packageJson.version} (+https://github.com/teamdebris/blockypanel-app)`;
 const SEARCH_TTL = 5 * 60_000;
 const PROJECT_TTL = 10 * 60_000;
 

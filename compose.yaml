@@ -1,7 +1,7 @@
 services:
   blocky:
     # Pin a release with BLOCKY_VERSION in .env (e.g. 0.1.0); compose.build.yaml builds from source instead.
-    image: ghcr.io/teamdebris/blocky-panel:${BLOCKY_VERSION:-latest}
+    image: ghcr.io/teamdebris/blockypanel-app:${BLOCKY_VERSION:-latest}
     container_name: blocky-panel
     environment:
       BLOCKY_STORAGE: /var/lib/blocky

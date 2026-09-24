@@ -33,14 +33,14 @@ Blocky runs on any Linux machine with [Docker](https://docs.docker.com/engine/in
 
 ```sh
 sudo mkdir -p /opt/blocky-panel && cd /opt/blocky-panel
-sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blocky-panel/main/compose.yaml
-sudo curl -fsSL -o .env https://raw.githubusercontent.com/teamdebris/blocky-panel/main/.env.example
+sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blockypanel-app/main/compose.yaml
+sudo curl -fsSL -o .env https://raw.githubusercontent.com/teamdebris/blockypanel-app/main/.env.example
 # Edit .env and set BLOCKY_ADMIN_PASSWORD to a long random value (at least 16 characters):
 #   openssl rand -base64 24
 sudo docker compose up -d
 ```
 
-The image is `ghcr.io/teamdebris/blocky-panel`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. To stay on a release, set `BLOCKY_VERSION` in `.env` (for example `0.1.0`).
+The image is `ghcr.io/teamdebris/blockypanel-app`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. To stay on a release, set `BLOCKY_VERSION` in `.env` (for example `0.1.0`).
 
 To keep it somewhere else, use that folder instead and set `BLOCKY_HOST_STORAGE` in `.env` to its absolute path (for example `/srv/minecraft`). The data can also live apart from the Compose files: point `BLOCKY_HOST_STORAGE` at any absolute path.
 
@@ -59,7 +59,7 @@ Sign-in sends passwords and session cookies, so reach the panel over HTTPS (or o
 If nothing else on the machine uses ports 80 and 443, Blocky can bring its own HTTPS. Point a domain at the machine, open ports 80 and 443, then in `/opt/blocky-panel`:
 
 ```sh
-sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blocky-panel/main/compose.caddy.yaml
+sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blockypanel-app/main/compose.caddy.yaml
 # In .env, uncomment and fill in:
 #   COMPOSE_FILE=compose.yaml:compose.caddy.yaml
 #   BLOCKY_DOMAIN=panel.example.com
