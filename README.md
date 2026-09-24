@@ -52,7 +52,25 @@ Then open the panel. The first visit shows **Set up Blocky**, which asks for `BL
 
 ## Serve it over HTTPS
 
-Sign-in sends passwords and session cookies, so reach the panel over HTTPS (or only over a VPN). The simplest setup is a reverse proxy on the same host, with the panel bound to `127.0.0.1` (the default):
+Sign-in sends passwords and session cookies, so reach the panel over HTTPS (or only over a VPN).
+
+### The bundled Caddy
+
+If nothing else on the machine uses ports 80 and 443, Blocky can bring its own HTTPS. Point a domain at the machine, open ports 80 and 443, then in `/opt/blocky-panel`:
+
+```sh
+sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blocky-panel/main/compose.caddy.yaml
+# In .env, uncomment and fill in:
+#   COMPOSE_FILE=compose.yaml:compose.caddy.yaml
+#   BLOCKY_DOMAIN=panel.example.com
+sudo docker compose up -d
+```
+
+Caddy gets and renews the certificate by itself and keeps it in `caddy/`. With `COMPOSE_FILE` in `.env`, the usual `docker compose` commands (`pull`, `up -d`, `logs`) include it automatically. The overlay also turns on `BLOCKY_TRUST_PROXY` and `BLOCKY_COOKIE_SECURE`. Keep `BLOCKY_BIND_ADDRESS` at `127.0.0.1`, so Caddy stays the only way in.
+
+### Your own reverse proxy
+
+Already running Nginx Proxy Manager, Traefik, or Caddy? Point it at the panel, which is bound to `127.0.0.1` by default:
 
 ```env
 BLOCKY_BIND_ADDRESS=127.0.0.1
@@ -149,14 +167,15 @@ Set `BLOCKY_WEBHOOK_URL` to a Discord webhook (or any endpoint accepting `{"cont
 ```text
 /opt/blocky-panel/                   # BLOCKY_HOST_STORAGE
 ├── compose.yaml, .env               # your install (when the data lives next to it)
-├── panel/panel.db                   # user accounts, invites, and sessions (SQLite)
+├── panel/panel.db                   # user accounts, sessions, and offsite backup settings (SQLite)
 ├── panel/control-state.json         # backup policies, schedule state, and operation history
 ├── panel/control-state.json.bak     # previous copy, used automatically if the main file is damaged
 ├── panel/cache/restic/              # restic metadata cache (safe to delete)
 ├── servers/<server-id>/data/        # world and saves (backed up)
 ├── servers/<server-id>/server.json  # saved configuration, used to reattach a removed server
 ├── backups/<server-id>/restic/      # deduplicated backups
-└── backups/<server-id>/restic-password # required to restore incremental snapshots
+├── backups/<server-id>/restic-password # required to restore incremental snapshots
+└── caddy/                           # certificates, with the bundled Caddy only
 ```
 
 Managed containers carry `panel.*` labels. Those labels are the panel's desired-state record, so the server list can be rebuilt directly from Docker without a separate database. `server.json` mirrors them so a world can be reattached after its container is removed.
