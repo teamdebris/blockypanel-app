@@ -1,7 +1,8 @@
 import "server-only";
 import { runScheduledBackups } from "@/lib/docker";
+import { runOffsiteSchedule } from "@/lib/offsite";
 
-const schedulerGlobal = globalThis as typeof globalThis & { __blockyScheduler?: NodeJS.Timeout; __blockySchedulerRunning?: boolean };
+const schedulerGlobal = globalThis as typeof globalThis & { __blockyScheduler?: NodeJS.Timeout; __blockySchedulerRunning?: boolean; __blockyOffsiteRunning?: boolean };
 
 async function tick() {
   // A first (full) backup of a large world can take longer than the tick interval; never overlap runs.
@@ -12,8 +13,17 @@ async function tick() {
   finally { schedulerGlobal.__blockySchedulerRunning = false; }
 }
 
+// Offsite copies run on their own loop, so a long upload never delays local backups.
+async function offsiteTick() {
+  if (schedulerGlobal.__blockyOffsiteRunning) return;
+  schedulerGlobal.__blockyOffsiteRunning = true;
+  try { await runOffsiteSchedule(); }
+  catch (error) { console.error("Blocky offsite schedule check failed", error); }
+  finally { schedulerGlobal.__blockyOffsiteRunning = false; }
+}
+
 if (!schedulerGlobal.__blockyScheduler && process.env.BLOCKY_SCHEDULER !== "false") {
-  const timer = setInterval(() => void tick(), 60_000);
+  const timer = setInterval(() => { void tick(); void offsiteTick(); }, 60_000);
   timer.unref();
   schedulerGlobal.__blockyScheduler = timer;
   setTimeout(() => void tick(), 15_000).unref();

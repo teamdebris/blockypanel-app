@@ -8,10 +8,10 @@ import { randomBytes, randomUUID } from "node:crypto";
 import Docker, { Container, ContainerCreateOptions, ContainerInfo } from "dockerode";
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
 import {
-  checkIncrementalRepository, copyToOffsite, createIncrementalSnapshot, forgetIncrementalSnapshots, getIncrementalSnapshot,
-  incrementalBackupRecord, listIncrementalSnapshots, offsiteEnabled, pruneIncrementalRepository, pruneOffsite,
-  restoreIncrementalSnapshot,
+  checkIncrementalRepository, createIncrementalSnapshot, forgetIncrementalSnapshots, getIncrementalSnapshot,
+  incrementalBackupRecord, listIncrementalSnapshots, pruneIncrementalRepository, restoreIncrementalSnapshot,
 } from "@/lib/incremental-backups";
+import { offsiteSettings, serverOffsiteStatus } from "@/lib/offsite-settings";
 import { activeOperation, type ActiveOperation, type FinishedOperation, lastOperation, setOperationStep, startServerOperation, withServerLock } from "@/lib/operations";
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isModrinthId, modrinthEnv } from "@/lib/modrinth-core";
@@ -20,7 +20,7 @@ import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
 import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, recordEvent, recordObservedStatus, removeServerControl } from "@/lib/store";
-import { JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES } from "@/lib/validation";
+import { JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
 const docker = new Docker();
 const IMAGE = process.env.MINECRAFT_IMAGE || "itzg/minecraft-server:latest";
@@ -83,6 +83,7 @@ type ServerSummary = ServerMeta & {
   operation?: ActiveOperation;
   lastOperation?: FinishedOperation;
   backup?: { enabled: boolean; intervalHours: number; lastRunAt?: string; consecutiveFailures: number };
+  offsite?: { lastCopyAt?: string; lastError?: string };
   image?: string;
 };
 
@@ -497,15 +498,16 @@ function withOperations<T extends ServerSummary>(summary: T): T {
 }
 
 export async function getSystem() {
+  const offsiteBackups = Boolean(await offsiteSettings().catch(() => undefined));
   if (isDemo()) {
     const state = demoState();
-    return { dockerAvailable: true, dockerVersion: "28.3.2", serverCount: state.servers.length, runningCount: state.servers.filter((server) => server.status === "running").length, offsiteBackups: false, publicHost: PUBLIC_HOST };
+    return { dockerAvailable: true, dockerVersion: "28.3.2", serverCount: state.servers.length, runningCount: state.servers.filter((server) => server.status === "running").length, offsiteBackups, publicHost: PUBLIC_HOST };
   }
   try {
     const [version, items] = await Promise.all([timed(docker.version(), "the version check"), managedContainers()]);
-    return { dockerAvailable: true, dockerVersion: version.Version, serverCount: items.length, runningCount: items.filter((item) => item.State === "running").length, offsiteBackups: offsiteEnabled(), publicHost: PUBLIC_HOST };
+    return { dockerAvailable: true, dockerVersion: version.Version, serverCount: items.length, runningCount: items.filter((item) => item.State === "running").length, offsiteBackups, publicHost: PUBLIC_HOST };
   } catch (error) {
-    return { dockerAvailable: false, runningCount: 0, serverCount: 0, offsiteBackups: offsiteEnabled(), publicHost: PUBLIC_HOST, error: error instanceof Error ? error.message : "Docker is unavailable." };
+    return { dockerAvailable: false, runningCount: 0, serverCount: 0, offsiteBackups, publicHost: PUBLIC_HOST, error: error instanceof Error ? error.message : "Docker is unavailable." };
   }
 }
 
@@ -554,10 +556,10 @@ export async function listServers(): Promise<ServerSummary[]> {
 /** Adds schedule state so the overview can flag servers whose backups are missing or failing. */
 async function withBackupHealth(servers: ServerSummary[]) {
   return Promise.all(servers.map(async (server) => {
-    const control = await getServerControl(server.id).catch(() => undefined);
+    const [control, offsite] = await Promise.all([getServerControl(server.id).catch(() => undefined), serverOffsiteStatus(server.id).catch(() => undefined)]);
     if (!control) return server;
     const { enabled, intervalHours, lastRunAt } = control.backupPolicy;
-    return { ...server, backup: { enabled, intervalHours, lastRunAt, consecutiveFailures: control.schedule?.consecutiveFailures ?? 0 } };
+    return { ...server, backup: { enabled, intervalHours, lastRunAt, consecutiveFailures: control.schedule?.consecutiveFailures ?? 0 }, ...(offsite ? { offsite } : {}) };
   }));
 }
 
@@ -954,8 +956,16 @@ export async function restoreBackup(id: string, name: string) {
     });
   }
   await getIncrementalSnapshot(id, name);
+  return restoreServerFiles(id, "Restoring a backup", () => restoreIncrementalSnapshot(id, name), "Backup restored and health check passed.");
+}
+
+/**
+ * Replaces a server's files: takes a safety backup, stops the server, empties its data folder, runs
+ * `restore` to fill it, and starts it again. If anything fails, the safety backup is put back.
+ */
+export async function restoreServerFiles(id: string, label: string, restore: () => Promise<void>, success: string) {
   const info = await findInfo(id);
-  return startServerOperation(id, "restore", "Restoring a backup", async () => {
+  return startServerOperation(id, "restore", label, async () => {
     const container = docker.getContainer(info.Id);
     const meta = metaFromLabels(info.Labels);
     setOperationStep(id, "Taking a safety backup");
@@ -964,12 +974,14 @@ export async function restoreBackup(id: string, name: string) {
     await stopContainer(container);
     try {
       setOperationStep(id, "Restoring world files");
-      await restoreStoredBackup(meta, name);
+      await clearServerData(meta);
+      await restore();
+      diskUsage.delete(id);
       await container.start();
       setOperationStep(id, "Waiting for Minecraft to start");
       await waitUntilReady(container);
       await applyRetention(id, (await getServerControl(id)).backupPolicy.retention);
-      await recordEvent(id, "restore", "Backup restored and health check passed.", "success");
+      await recordEvent(id, "restore", success, "success");
     } catch (error) {
       const failure = describe(error, "Restore failed.");
       setOperationStep(id, "Restore failed; reapplying the safety backup");
@@ -986,6 +998,42 @@ export async function restoreBackup(id: string, name: string) {
       invalidateServerList();
     }
   });
+}
+
+/** A server's settings as stored with its offsite copies (its server.json, without host paths). */
+export async function serverSettingsForOffsite(id: string) {
+  const settings: Partial<ServerMeta> = metaFromLabels((await findInfo(id)).Labels);
+  delete settings.dataPath;
+  return settings;
+}
+
+/**
+ * Recreates a server from an offsite copy, keeping its ID: validates its settings like a new
+ * server's, lets `restore` fill its data folder (and local backups), then creates and starts its
+ * container. Refuses when the ID or port is already in use on this panel.
+ */
+export async function adoptRestoredServer(id: string, stored: Record<string, unknown>, restore: () => Promise<void>) {
+  assertServerId(id);
+  if (isDemo()) throw new BadRequestError("Restoring requires a real Docker host.");
+  const parsed = updateServerSchema.safeParse(stored);
+  if (!parsed.success) throw new Error(`Its saved settings aren't valid: ${parsed.error.issues[0]?.message || "unknown problem"}`);
+  if ((await managedContainers()).some((item) => item.Labels?.["panel.id"] === id) || pendingCreations.has(id)) throw new ConflictError("It's already on this panel.");
+  if (await lstat(serverRootPath(id)).catch(() => undefined) || await lstat(serverBackupPath(id)).catch(() => undefined)) throw new ConflictError("Its files are already on this panel, as a detached world. Reattach or delete it first.");
+  await assertPortAvailable(parsed.data.port);
+  const createdAt = typeof stored.createdAt === "string" && !Number.isNaN(Date.parse(stored.createdAt)) ? stored.createdAt : new Date().toISOString();
+  const meta: ServerMeta = { ...parsed.data, id, createdAt, dataPath: dockerServerDataPath(id) };
+  const data = serverDataPath(id);
+  await mkdir(data, { recursive: true });
+  await chown(data, 1000, 1000).catch(() => undefined);
+  await chmod(data, 0o770).catch(() => undefined);
+  try { await restore(); }
+  catch (error) {
+    await rm(serverRootPath(id), { recursive: true, force: true }).catch(() => undefined);
+    await rm(serverBackupPath(id), { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  await recordEvent(id, "restore", `${meta.name} was restored from an offsite backup.`, "success");
+  return launchNewServer(meta);
 }
 
 export async function deleteBackup(id: string, name: string) {
@@ -1124,7 +1172,6 @@ async function runMaintenance(id: string) {
     // Mark the attempt either way so a failing prune retries tomorrow, not every minute.
     await markMaintenance(id, { lastPruneAt: new Date().toISOString() });
     await pruneIncrementalRepository(id).catch((error) => recordEvent(id, "backup-prune", `Pruning unused backup data failed: ${describe(error, "unknown error")}`, "warning"));
-    await pruneOffsite(id).catch((error) => recordEvent(id, "backup-prune", `Pruning the offsite repository failed: ${describe(error, "unknown error")}`, "warning"));
   }
   if (maintenanceDue(control, now).check) {
     try {
@@ -1158,10 +1205,6 @@ export async function runScheduledBackups() {
             const failures = await markScheduledAttempt(id, false);
             await recordEvent(id, "backup", `Scheduled backup failed (${failures} in a row): ${describe(error, "Unknown error")}`, shouldAlertFailure(failures) ? "error" : "warning");
             return;
-          }
-          if (offsiteEnabled()) {
-            try { await copyToOffsite(id, policy.retention); await recordEvent(id, "backup-offsite", "Snapshots copied to the offsite repository.", "info"); }
-            catch (error) { await recordEvent(id, "backup-offsite", `Offsite copy failed: ${describe(error, "unknown error")}`, "error"); }
           }
         });
       }

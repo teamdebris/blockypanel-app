@@ -3,16 +3,12 @@ import "server-only";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
 import { resticCachePath, serverBackupPath, serverDataPath, storagePath } from "@/lib/paths";
 
 const SNAPSHOT_NAME = /^snapshot-([0-9a-f]{64})$/;
-// Optional second repository root, e.g. "s3:s3.amazonaws.com/bucket/blocky", "sftp:user@host:/srv/blocky"
-// or "b2:bucket:blocky". Each server gets its own sub-repository. Credentials come from the usual
-// restic environment variables (AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID, ...), which are passed through.
-const OFFSITE_ROOT = (process.env.BLOCKY_OFFSITE_REPOSITORY || "").replace(/\/+$/, "");
 
 type ResticSnapshot = {
   id: string;
@@ -38,10 +34,6 @@ async function exists(file: string) {
 function resticEnvironment(serverId: string, repository = locations(serverId).repository) {
   const { password } = locations(serverId);
   return { ...process.env, RESTIC_REPOSITORY: repository, RESTIC_PASSWORD_FILE: password, RESTIC_CACHE_DIR: resticCachePath() };
-}
-
-function offsiteRepository(serverId: string) {
-  return OFFSITE_ROOT ? `${OFFSITE_ROOT}/${serverId}` : "";
 }
 
 /**
@@ -137,30 +129,22 @@ export async function checkIncrementalRepository(serverId: string) {
   await runRestic(serverId, ["check"]);
 }
 
-export function offsiteEnabled() {
-  return Boolean(OFFSITE_ROOT);
-}
-
-/** Copies every local snapshot that is missing from the offsite repository, then applies retention there. */
-export async function copyToOffsite(serverId: string, retention: number) {
-  const destination = offsiteRepository(serverId);
-  if (!destination) return false;
+/** A server's local repository and its password, for copying offsite. Undefined when it has no backups yet. */
+export async function localRepository(serverId: string) {
   const { repository, password } = locations(serverId);
-  const fromEnv = { RESTIC_FROM_REPOSITORY: repository, RESTIC_FROM_PASSWORD_FILE: password };
-  try {
-    await runRestic(serverId, ["cat", "config"], { repository: destination });
-  } catch {
-    await runRestic(serverId, ["init", "--copy-chunker-params"], { repository: destination, extraEnv: fromEnv });
-  }
-  await runRestic(serverId, ["copy"], { repository: destination, extraEnv: fromEnv });
-  await runRestic(serverId, ["forget", "--group-by", "tags", "--keep-last", String(Math.max(retention, 5))], { repository: destination });
-  return true;
+  if (!(await exists(path.join(repository, "config"))) || !(await exists(password))) return undefined;
+  return { repository, password: (await readFile(password, "utf8")).trim() };
 }
 
-export async function pruneOffsite(serverId: string) {
-  const destination = offsiteRepository(serverId);
-  if (!destination) return;
-  await runRestic(serverId, ["prune", "--max-unused", "10%"], { repository: destination });
+/**
+ * Prepares the local backups of a server restored from offsite: its password must be the one its
+ * offsite repository uses, so later copies go to the same place. restic creates the repository.
+ */
+export async function writeLocalRepositoryPassword(serverId: string, password: string) {
+  const { root, password: passwordFile } = locations(serverId);
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await mkdir(resticCachePath(), { recursive: true, mode: 0o700 });
+  await writeFile(passwordFile, `${password}\n`, { flag: "wx", mode: 0o600 });
 }
 
 export function openIncrementalDownload(serverId: string, snapshot: ResticSnapshot, signal?: AbortSignal) {

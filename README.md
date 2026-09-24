@@ -16,7 +16,7 @@ A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/min
 - Live console with command replies, history, quick commands, filtering, and player-name completion
 - Online player list with kick, op, and whitelist actions; a copyable connect address for each server (set `BLOCKY_PUBLIC_HOST` to your domain)
 - Create, download, restore, and delete incremental, deduplicated backups
-- Scheduled backups with per-kind retention, retry backoff, weekly integrity checks, and optional offsite copies
+- Scheduled backups with per-kind retention, retry backoff, weekly integrity checks, and offsite copies set up from the panel
 - Browse, upload, edit, download, create, and delete files within each server's data directory
 - Back up before updates and settings changes, verify health, and roll back automatically on failure
 - Long operations (provisioning, updates, restores, backups) run in the background with live progress, and only one runs per server at a time
@@ -125,7 +125,20 @@ Incremental backups use restic, installed in the panel image. Each server has an
 - **Retention** is applied per kind: scheduled and manual backups each keep the configured number, and the newest five safety snapshots (taken before updates, settings changes, and restores) are kept separately so they never push out scheduled history.
 - **Scheduled backups never stop a running server.** If RCON is unavailable, the run fails, retries with backoff (15 minutes, 30, 1 hour, ... up to the interval), and alerts.
 - **Maintenance:** unreferenced data is pruned once a day, and `restic check` runs weekly.
-- **Offsite copies:** set `BLOCKY_OFFSITE_REPOSITORY` to a restic repository root (for example `s3:s3.amazonaws.com/bucket/blocky`, `b2:bucket:blocky`, or `sftp:user@host:/srv/blocky`) plus the matching restic credentials. After each scheduled backup, Blocky copies new snapshots to `<root>/<server-id>` and keeps the same number of snapshots per kind there. **Store each server's `restic-password` file somewhere safe off the host as well**: offsite snapshots are encrypted with it and cannot be restored without it.
+
+### Offsite backups
+
+Admins set these up under **Offsite backups**, with no config files to edit. Pick where copies go:
+
+- **Cloud storage:** Backblaze B2, Cloudflare R2, Wasabi, Amazon S3, MinIO, or any S3-compatible service. Enter the bucket and an access key that can only reach it.
+- **Another disk:** a folder on this machine, like a second drive or a mounted network share (`/mnt/backup`). Blocky runs restic in a short-lived `restic/restic` container that mounts it, so Compose doesn't change.
+- **SFTP / NAS:** a host, user, and folder. Sign in with a password, or with an SSH key the panel generates for you. The server's host key is pinned the first time you connect, and copying stops if it ever changes.
+
+Then choose a **backup passphrase**. Everything is encrypted before it leaves the machine. After each backup (or once a day), Blocky copies what changed, one server at a time, with each server's settings. A server's Backups tab shows when it was last copied, and failures go to its activity log and the webhook.
+
+**Disaster recovery.** On a new machine, install Blocky, open **Offsite backups → Restore from an offsite backup**, and enter the destination and your passphrase. Pick the servers to bring back. Each one is recreated with its settings, port, and newest world, then started, and the new panel carries on copying to the same place. You can also roll a single server back to any offsite copy from its Backups tab.
+
+The passphrase can't be recovered: keep it in a password manager. It can be changed at any time (the old one stops working). For cloud storage, turn on object versioning or object lock at the provider, so even someone who takes over the panel can't erase older copies.
 
 ## Alerts
 

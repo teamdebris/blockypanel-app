@@ -60,6 +60,13 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   // Searching and compatibility checks serve installing, which is admin-only (a plugin is code on the server).
   "/api/servers/[id]/modrinth/search": { GET: "admin" },
   "/api/servers/[id]/modrinth/compatibility": { GET: "admin" },
+  "/api/servers/[id]/offsite": { GET: "admin", POST: "admin" },
+  "/api/offsite": { GET: "admin", PUT: "admin", PATCH: "admin", DELETE: "admin" },
+  "/api/offsite/test": { POST: "admin" },
+  "/api/offsite/copy": { POST: "admin" },
+  "/api/offsite/ssh-key": { POST: "admin" },
+  "/api/offsite/discover": { POST: "admin" },
+  "/api/offsite/restore": { POST: "admin" },
   "/api/worlds": { GET: "admin" },
   "/api/worlds/[id]": { POST: "admin", DELETE: "admin" },
 };
@@ -75,10 +82,10 @@ export function apiAccess(pathname: string, method: string): Access | undefined 
   return route?.methods[method === "HEAD" ? "GET" : method];
 }
 
-/** Pages: sign-in flows are public, user management is admin-only, everything else needs a session. */
+/** Pages: sign-in flows are public, user management and offsite backups are admin-only, everything else needs a session. */
 export function pageAccess(pathname: string): Access {
   if (pathname === "/login" || pathname === "/setup" || pathname.startsWith("/invite/")) return "public";
-  if (pathname === "/users" || pathname.startsWith("/users/")) return "admin";
+  if (pathname === "/users" || pathname.startsWith("/users/") || pathname === "/backups") return "admin";
   return "viewer";
 }
 
@@ -94,6 +101,7 @@ export function capabilities(role: Role | undefined) {
     files: admin,
     restore: admin,          // restore, delete, download backups; schedule
     users: admin,
+    offsite: admin,          // offsite backups: destination, passphrase, disaster recovery
   };
 }
 export type Capabilities = ReturnType<typeof capabilities>;

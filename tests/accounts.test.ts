@@ -179,3 +179,13 @@ test("the permission table covers every API route and method, and denies anythin
   assert.equal(pageAccess("/invite/abc"), "public");
   assert.equal(pageAccess("/servers/abc"), "viewer");
 });
+
+test("panel settings store JSON values and can be removed", () => {
+  const { accounts } = store();
+  assert.equal(accounts.getSetting("offsite"), undefined);
+  accounts.setSetting("offsite", { keep: 14, destination: { kind: "folder", path: "/mnt/backup" } });
+  accounts.setSetting("offsite", { keep: 30 });
+  assert.deepEqual(accounts.getSetting("offsite"), { keep: 30 });
+  accounts.setSetting("offsite", undefined);
+  assert.equal(accounts.getSetting("offsite"), undefined);
+});

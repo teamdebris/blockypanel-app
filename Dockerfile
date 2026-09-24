@@ -18,7 +18,8 @@ RUN npm run build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
-RUN apk add --no-cache restic
+# openssh-client and sshpass: SFTP offsite destinations (key or password sign-in).
+RUN apk add --no-cache restic openssh-client sshpass
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000

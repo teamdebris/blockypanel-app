@@ -23,6 +23,8 @@ export type MinecraftServer = ServerConfig & {
   playersOnline: number; players: string[]; backupCount: number; restartCount: number;
   operation?: ActiveOperation; lastOperation?: FinishedOperation;
   backup?: { enabled: boolean; intervalHours: number; lastRunAt?: string; consecutiveFailures: number };
+  /** Present when offsite backups are on. */
+  offsite?: { lastCopyAt?: string; lastError?: string };
   image?: string;
 };
 

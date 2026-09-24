@@ -13,7 +13,8 @@ import { BadRequestError } from "@/lib/errors";
 export const storagePath: (...parts: string[]) => string = Reflect.get(path, "join");
 
 export const STORAGE_ROOT = path.resolve(/* turbopackIgnore: true */ process.env.BLOCKY_STORAGE || "storage");
-const DOCKER_STORAGE_ROOT = path.resolve(/* turbopackIgnore: true */ process.env.BLOCKY_DOCKER_STORAGE || STORAGE_ROOT);
+/** The storage root as the Docker daemon (the host) sees it. */
+export const DOCKER_STORAGE_ROOT = path.resolve(/* turbopackIgnore: true */ process.env.BLOCKY_DOCKER_STORAGE || STORAGE_ROOT);
 
 const SERVER_ID = /^[a-zA-Z0-9-]{1,64}$/;
 

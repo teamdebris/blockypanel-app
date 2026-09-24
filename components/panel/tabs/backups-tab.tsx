@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Archive, CalendarClock, CheckCircle2, Download, MoreHorizontal, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, CheckCircle2, CloudUpload, Download, MoreHorizontal, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ function timeLabel(value: string) {
 }
 
 function ScheduleCard({ server, data, onSaved }: { server: MinecraftServer; data: BackupData; onSaved: () => void }) {
-  const { track, isPending, system, can } = usePanel();
+  const { track, isPending, can } = usePanel();
   const now = useNow(30_000);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(data.policy);
@@ -39,7 +40,7 @@ function ScheduleCard({ server, data, onSaved }: { server: MinecraftServer; data
       onSaved();
     });
   }
-  return <Section title="Automatic backups" description={system?.offsiteBackups ? "Copied offsite after each scheduled run." : "Stored on this host."}
+  return <Section title="Automatic backups" description={server.offsite ? "Stored on this host and copied offsite." : "Stored on this host."}
     actions={!editing && can.restore && <Button size="sm" variant="outline" onClick={() => { setDraft(policy); setEditing(true); }}><Pencil />Edit</Button>}>
     {editing ? <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
@@ -61,7 +62,55 @@ function ScheduleCard({ server, data, onSaved }: { server: MinecraftServer; data
         Last backup {lastBackupAt ? <span title={formatDate(lastBackupAt)}>{formatRelative(lastBackupAt, now)}</span> : "never"}
       </p>
       {failing && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{schedule.lastFailure || `The last ${schedule.consecutiveFailures} scheduled backups failed.`} Retrying automatically with a growing delay.</p>}
+      <OffsiteLine server={server} now={now} />
     </div>}
+  </Section>;
+}
+
+function OffsiteLine({ server, now }: { server: MinecraftServer; now: number }) {
+  const { can } = usePanel();
+  if (!server.offsite) return can.offsite ? <p className="text-xs text-muted-foreground"><Link href="/backups" className="underline underline-offset-2 hover:text-foreground">Set up offsite backups</Link> to keep copies off this machine.</p> : null;
+  const { lastCopyAt, lastError } = server.offsite;
+  return <p className={cn("flex items-center gap-1.5", lastError ? "text-destructive" : "text-muted-foreground")}>
+    <CloudUpload className="size-4" />{lastError ? "Last offsite copy failed" : lastCopyAt ? <>Offsite: copied <span title={formatDate(lastCopyAt)}>{formatRelative(lastCopyAt, now)}</span></> : "Offsite: waiting for the first copy"}
+  </p>;
+}
+
+type OffsiteSnapshot = { id: string; time: string; path: string; size: number; kind: string };
+
+/** Offsite copies of this server, loaded on request (listing them reaches the destination). */
+function OffsiteSnapshots({ server }: { server: MinecraftServer }) {
+  const { track } = usePanel();
+  const [snapshots, setSnapshots] = useState<OffsiteSnapshot[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [confirm, setConfirm] = useState<OffsiteSnapshot | null>(null);
+  async function load() {
+    setLoading(true); setError("");
+    try { setSnapshots((await api<{ snapshots: OffsiteSnapshot[] }>(`/api/servers/${server.id}/offsite`)).snapshots); }
+    catch (reason) { setError(errorMessage(reason, "Couldn't reach the offsite destination.")); }
+    finally { setLoading(false); }
+  }
+  async function restore(snapshot: OffsiteSnapshot) {
+    await track(`${server.id}:restore`, async () => {
+      const result = await api<{ message: string }>(`/api/servers/${server.id}/offsite`, { method: "POST", body: JSON.stringify({ snapshot: snapshot.id }) });
+      toast.success(result.message);
+    });
+  }
+  return <Section title="Offsite copies" description="Restore from here if the backups on this machine are damaged or gone."
+    actions={<Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>{snapshots ? "Refresh" : "Show"}</Button>}>
+    {error ? <p className="text-xs text-destructive">{error}</p>
+      : loading ? <Skeleton className="h-16" />
+        : !snapshots ? <p className="text-xs text-muted-foreground">Listed from the destination when you ask.</p>
+          : !snapshots.length ? <p className="text-xs text-muted-foreground">Nothing copied yet.</p>
+            : <ul className="-mx-4 max-h-80 divide-y divide-border overflow-y-auto sm:-mx-5">{snapshots.map((snapshot) => <li key={snapshot.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+              <div className="min-w-0 flex-1"><p className="text-sm">{formatDate(snapshot.time)}</p><p className="text-xs text-muted-foreground">{backupKindLabels[backupKind(snapshot)]}{snapshot.size ? ` · ${formatBytes(snapshot.size)}` : ""}</p></div>
+              <Button size="sm" variant="ghost" disabled={Boolean(server.operation)} onClick={() => setConfirm(snapshot)}><Undo2 />Restore</Button>
+            </li>)}</ul>}
+    <ConfirmDialog open={Boolean(confirm)} onOpenChange={(open) => !open && setConfirm(null)} title={confirm ? `Roll ${server.name} back to ${formatDate(confirm.time)}?` : ""} confirmLabel="Restore this copy" onConfirm={() => { if (confirm) void restore(confirm); }}>
+      <p><span className="font-medium text-foreground">Everything built or changed after that time will be lost.</span> The world is downloaded from the offsite destination, which can take a while.</p>
+      <p>A safety backup of the current world is taken first, so you can undo this.</p>
+    </ConfirmDialog>
   </Section>;
 }
 
@@ -149,6 +198,9 @@ export function BackupsTab({ server }: { server: MinecraftServer }) {
           </section>)
             : <div className="grid place-items-center rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground"><Archive className="mb-2 size-5" />{filter === "all" ? "No backups yet. The first one runs automatically, or back up now." : "No backups of this kind."}</div>}
     </div>
-    <div className="order-1 lg:order-2">{data ? <ScheduleCard key={JSON.stringify(data.policy)} server={server} data={data} onSaved={() => void load()} /> : <Skeleton className="h-36" />}</div>
+    <div className="order-1 space-y-5 lg:order-2">
+      {data ? <ScheduleCard key={JSON.stringify(data.policy)} server={server} data={data} onSaved={() => void load()} /> : <Skeleton className="h-36" />}
+      {server.offsite && can.offsite && <OffsiteSnapshots server={server} />}
+    </div>
   </div>;
 }

@@ -101,6 +101,10 @@ export class AccountStore {
         actor TEXT NOT NULL,
         message TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
     // Databases created before recovery sessions were tied to the recovery password.
     const columns = db.prepare("PRAGMA table_info(sessions)").all().map((column) => String(column.name));
@@ -346,6 +350,19 @@ export class AccountStore {
       this.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
       return user;
     });
+  }
+
+  // ---- Panel settings (JSON values, e.g. offsite backups) ----
+
+  getSetting<T>(key: string): T | undefined {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+    return row ? JSON.parse(String(row.value)) as T : undefined;
+  }
+
+  /** Stores a value, or removes the setting when `value` is undefined. */
+  setSetting(key: string, value: unknown) {
+    if (value === undefined) this.db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+    else this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, JSON.stringify(value));
   }
 
   // ---- Audit log (account events; server activity lives in the control state) ----

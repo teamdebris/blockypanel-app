@@ -1,3 +1,4 @@
+import { S3_PROVIDERS, type S3Provider } from "./offsite-core.ts";
 import { isSafeSeed } from "./world.ts";
 import { z } from "zod";
 
@@ -79,3 +80,47 @@ export const fileWriteSchema = z.object({ path: filePathSchema.min(1), content: 
 
 export { managedPropertyKeys };
 export const rerollSchema = z.object({ seed: z.string().trim().max(64).refine(isSafeSeed, "The seed can't contain line breaks.").default("") });
+
+// ---- Offsite backups ----
+
+const S3_PROVIDER_VALUES = S3_PROVIDERS.map((provider) => provider.value) as [S3Provider, ...S3Provider[]];
+const hostName = z.string().trim().min(1, "Enter the host.").max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/, "Use a host name or IPv4 address, like nas.local or 192.168.1.20.");
+const remotePath = z.string().trim().min(1, "Enter a folder.").max(500).regex(/^\/[^\0\r\n"'`$\\]*$/, "Use an absolute path, like /volume1/backups.");
+const secret = z.string().max(1024).optional();
+
+export const offsiteDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("s3"),
+    provider: z.enum(S3_PROVIDER_VALUES),
+    endpoint: z.string().trim().max(300).regex(/^((https?:\/\/)?[a-zA-Z0-9.-]+(:\d{1,5})?\/?)?$/, "Use a host like s3.example.com or https://s3.example.com:9000.").default(""),
+    region: z.string().trim().max(64).regex(/^[a-z0-9-]*$/, "Regions look like us-east-1.").default(""),
+    bucket: z.string().trim().min(3, "Enter the bucket name.").max(63).regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/, "Bucket names use lowercase letters, numbers, dots, and dashes."),
+    prefix: z.string().trim().max(200).regex(/^[a-zA-Z0-9._/-]*$/, "Use letters, numbers, dots, dashes, and slashes.").default(""),
+    accessKeyId: z.string().trim().min(1, "Enter the access key ID.").max(256),
+    secretAccessKey: secret,
+  }),
+  z.object({ kind: z.literal("folder"), path: z.string().trim().min(1, "Enter a folder.").max(500).regex(/^[^\0\r\n]*$/, "That isn't a valid folder path.") }),
+  z.object({
+    kind: z.literal("sftp"),
+    host: hostName,
+    port: z.number().int().min(1).max(65535).default(22),
+    user: z.string().trim().min(1, "Enter the user name.").max(64).regex(/^[a-zA-Z0-9_][a-zA-Z0-9._-]*$/, "User names use letters, numbers, dots, dashes, and underscores."),
+    path: remotePath,
+    auth: z.enum(["password", "key"]),
+    password: secret,
+    hostKey: z.string().max(20_000).optional(),
+  }),
+]);
+
+const passphrase = z.string().max(1024);
+export const offsiteSetupSchema = z.object({
+  destination: offsiteDestinationSchema,
+  passphrase,
+  schedule: z.enum(["after-backup", "daily"]).default("after-backup"),
+  keep: z.number().int().min(1).max(500).default(30),
+});
+export const offsiteUpdateSchema = z.object({ schedule: z.enum(["after-backup", "daily"]).optional(), keep: z.number().int().min(1).max(500).optional(), passphrase: passphrase.optional() });
+export const offsiteTestSchema = z.object({ destination: offsiteDestinationSchema });
+export const offsiteDiscoverSchema = z.object({ destination: offsiteDestinationSchema, passphrase });
+export const offsiteRestoreSchema = offsiteDiscoverSchema.extend({ servers: z.array(z.string().regex(/^[a-zA-Z0-9-]{1,64}$/)).min(1, "Choose at least one server.").max(100) });
+export const offsiteSnapshotRestoreSchema = z.object({ snapshot: z.string().regex(/^[0-9a-f]{64}$/, "Invalid snapshot.") });

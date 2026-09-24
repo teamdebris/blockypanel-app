@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Activity, Bell, BellOff, Box, ChevronLeft, ChevronRight, CircleAlert, LifeBuoy, LoaderCircle, LogOut, Menu, Monitor, Moon, Plus, RefreshCcw, Search, Server, Sun, UserRound, Users, WifiOff } from "lucide-react";
+import { Activity, Bell, BellOff, Box, ChevronLeft, ChevronRight, CircleAlert, CloudUpload, LifeBuoy, LoaderCircle, LogOut, Menu, Monitor, Moon, Plus, RefreshCcw, Search, Server, Sun, UserRound, Users, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/sonner";
@@ -55,6 +55,7 @@ function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   return <nav aria-label="Primary" className="space-y-1">
     <Link href="/" onClick={onNavigate} className="nav-item" aria-current={pathname === "/" ? "page" : undefined}><Activity />Overview</Link>
     <Link href="/servers" onClick={onNavigate} className="nav-item" aria-current={pathname === "/servers" ? "page" : undefined}><Server />All servers</Link>
+    {can.offsite && <Link href="/backups" onClick={onNavigate} className="nav-item" aria-current={pathname === "/backups" ? "page" : undefined}><CloudUpload />Offsite backups</Link>}
     {can.users && <Link href="/users" onClick={onNavigate} className="nav-item" aria-current={pathname === "/users" ? "page" : undefined}><Users />Users</Link>}
     {servers.length > 0 && <div className="pt-4">
       <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-[.12em] text-muted-foreground">Servers</p>
@@ -135,6 +136,7 @@ function Breadcrumbs() {
   const crumbs: { href: string; label: string }[] = [{ href: "/", label: "Overview" }];
   if (pathname.startsWith("/servers")) crumbs.push({ href: "/servers", label: "Servers" });
   if (pathname === "/users") crumbs.push({ href: "/users", label: "Users" });
+  if (pathname === "/backups") crumbs.push({ href: "/backups", label: "Offsite backups" });
   if (pathname === "/account") crumbs.push({ href: "/account", label: "Your account" });
   if (serverId) crumbs.push({ href: serverHref(serverId), label: server?.name || "Server" });
   if (serverId && serverTab && serverTab !== "overview") crumbs.push({ href: serverHref(serverId, serverTab), label: serverTabLabel(server, serverTab) });

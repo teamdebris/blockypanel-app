@@ -97,6 +97,7 @@ export function EmptyServers({ onCreate, dockerDown }: { onCreate: () => void; d
       <h3 className="font-display mt-4 text-lg font-semibold">No servers yet</h3>
       <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-muted-foreground">Create a Minecraft server with its own storage, automatic backups, and plugins or mods from Modrinth.</p>
       {can.manage ? <Button className="mt-4" onClick={onCreate} disabled={dockerDown}><Plus />Create your first server</Button> : <p className="mt-3 text-xs text-muted-foreground">An admin can create one.</p>}
+      {can.offsite && <p className="mt-3 text-xs text-muted-foreground">Moving from another machine? <Link href="/backups?restore=1" className="font-medium text-foreground underline underline-offset-2">Restore from an offsite backup</Link></p>}
       {dockerDown && can.manage && <p className="mt-2 text-xs text-destructive">Connect Docker to create servers.</p>}
     </div>
   </div>;

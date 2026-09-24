@@ -14,12 +14,6 @@ services:
       BLOCKY_STARTUP_TIMEOUT_SECONDS: ${BLOCKY_STARTUP_TIMEOUT_SECONDS:-180}
       BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
       BLOCKY_WEBHOOK_URL: ${BLOCKY_WEBHOOK_URL:-}
-      BLOCKY_OFFSITE_REPOSITORY: ${BLOCKY_OFFSITE_REPOSITORY:-}
-      # Credentials for the offsite repository, if it needs them (S3-compatible shown; see restic docs for others).
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      B2_ACCOUNT_ID: ${B2_ACCOUNT_ID:-}
-      B2_ACCOUNT_KEY: ${B2_ACCOUNT_KEY:-}
     ports:
       - "${BLOCKY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     volumes:
