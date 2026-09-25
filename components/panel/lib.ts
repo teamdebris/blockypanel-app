@@ -55,6 +55,7 @@ export const initialForm: ServerForm = {
   maxPlayers: "20", whitelist: "", seed: "", motd: "A Minecraft Server powered by Blocky", customProperties: "",
   initialMemoryPercent: "25", maxMemoryPercent: "75", rollingLogMaxFiles: "30", viewDistance: "8", simulationDistance: "6",
   stopAnnounceDelaySeconds: "10", useMeowiceFlags: true, pauseWhenEmptySeconds: "300", modrinthProjects: [], eula: false,
+  gameMode: "survival", pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: "16",
 };
 
 export function toPayload(form: ServerForm): ServerConfig & { eula?: boolean } {
@@ -64,6 +65,7 @@ export function toPayload(form: ServerForm): ServerConfig & { eula?: boolean } {
     initialMemoryPercent: Number(form.initialMemoryPercent), maxMemoryPercent: Number(form.maxMemoryPercent),
     rollingLogMaxFiles: Number(form.rollingLogMaxFiles), viewDistance: Number(form.viewDistance), simulationDistance: Number(form.simulationDistance),
     stopAnnounceDelaySeconds: Number(form.stopAnnounceDelaySeconds), pauseWhenEmptySeconds: Number(form.pauseWhenEmptySeconds),
+    spawnProtection: Number(form.spawnProtection),
     whitelist: form.whitelist.split(/[\n,]/).map((item) => item.trim()).filter(Boolean),
   };
 }
@@ -77,6 +79,8 @@ export function fromServer(server: MinecraftServer): ServerForm {
     rollingLogMaxFiles: String(server.rollingLogMaxFiles), viewDistance: String(server.viewDistance), simulationDistance: String(server.simulationDistance),
     stopAnnounceDelaySeconds: String(server.stopAnnounceDelaySeconds), useMeowiceFlags: server.useMeowiceFlags, pauseWhenEmptySeconds: String(server.pauseWhenEmptySeconds),
     modrinthProjects: server.modrinthProjects || [],
+    gameMode: server.gameMode || "survival", pvp: server.pvp ?? true, hardcore: server.hardcore ?? false, allowFlight: server.allowFlight ?? false,
+    commandBlocks: server.commandBlocks ?? false, onlineMode: server.onlineMode ?? true, spawnProtection: String(server.spawnProtection ?? 16),
   };
 }
 
@@ -86,6 +90,7 @@ const fieldLabels: Partial<Record<keyof ServerForm, string>> = {
   customProperties: "Custom properties", initialMemoryPercent: "Initial heap", maxMemoryPercent: "Maximum heap", rollingLogMaxFiles: "Log files kept",
   viewDistance: "View distance", simulationDistance: "Simulation distance", stopAnnounceDelaySeconds: "Shutdown warning",
   useMeowiceFlags: "Optimized JVM flags", pauseWhenEmptySeconds: "Pause when empty", modrinthProjects: "Plugins and mods",
+  gameMode: "Game mode", pvp: "PvP", hardcore: "Hardcore", allowFlight: "Allow flight", commandBlocks: "Command blocks", onlineMode: "Online mode", spawnProtection: "Spawn protection",
 };
 
 /** Human-readable list of settings that differ between two forms, for the apply confirmation. */

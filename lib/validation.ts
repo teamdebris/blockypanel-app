@@ -8,7 +8,11 @@ export const SERVER_TYPES = ["PAPER", "PURPUR", "VANILLA", "FABRIC", "QUILT", "F
 export const JAVA_VERSIONS = ["auto", "25", "21", "17", "11", "8"] as const;
 
 // Keys the panel manages itself, or that would break backups (RCON) or the port mapping if overridden.
-const managedPropertyKeys = new Set(["view-distance", "simulation-distance", "pause-when-empty-seconds"]);
+const managedPropertyKeys = new Set([
+  "view-distance", "simulation-distance", "pause-when-empty-seconds",
+  "gamemode", "pvp", "hardcore", "allow-flight", "enable-command-block", "online-mode", "spawn-protection",
+]);
+export const GAME_MODES = ["survival", "creative", "adventure", "spectator"] as const;
 const protectedPropertyKeys = new Set(["enable-rcon", "rcon.port", "rcon.password", "server-port", "enable-query", "query.port"]);
 
 function propertyKeys(value: string) {
@@ -30,7 +34,10 @@ const serverSchema = z.object({
   motd: z.string().trim().min(1).max(160).default("A Minecraft Server powered by Blocky"),
   customProperties: z.string().max(4000)
     .refine((value) => value.split("\n").every((line) => !line.trim() || line.includes("=")), "Custom properties must use key=value, one per line.")
-    .refine((value) => propertyKeys(value).every((key) => !managedPropertyKeys.has(key)), "Use the dedicated performance controls for view distance, simulation distance, and idle pause.")
+    .superRefine((value, context) => {
+      const key = propertyKeys(value).find((item) => managedPropertyKeys.has(item));
+      if (key) context.addIssue({ code: z.ZodIssueCode.custom, message: `Set ${key} with its own control in the settings, not here.` });
+    })
     .refine((value) => propertyKeys(value).every((key) => !protectedPropertyKeys.has(key)), "RCON, query, and server-port settings are managed by Blocky and cannot be overridden.")
     .default(""),
   initialMemoryPercent: z.number().int().min(5).max(90).default(25),
@@ -41,6 +48,13 @@ const serverSchema = z.object({
   stopAnnounceDelaySeconds: z.number().int().min(0).max(300).default(10),
   useMeowiceFlags: z.boolean().default(true),
   pauseWhenEmptySeconds: z.number().int().min(-1).max(86400).default(300),
+  gameMode: z.enum(GAME_MODES).default("survival"),
+  pvp: z.boolean().default(true),
+  hardcore: z.boolean().default(false),
+  allowFlight: z.boolean().default(false),
+  commandBlocks: z.boolean().default(false),
+  onlineMode: z.boolean().default(true),
+  spawnProtection: z.number().int().min(0).max(1000).default(16),
   modrinthProjects: z.array(z.string().regex(/^[a-zA-Z0-9]{8}$/, "Invalid Modrinth project.")).max(100, "At most 100 plugins or mods.")
     .transform((ids) => [...new Set(ids)]).default([]),
   eula: z.literal(true),

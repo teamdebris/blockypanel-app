@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { ConfirmDialog, Section } from "../common";
 import { ApiError, api, errorMessage, formatRelative, formChanges, fromServer, toPayload } from "../lib";
 import { useNow, usePanel } from "../panel-context";
-import { AdvancedFields, BasicFields, type FieldErrors, PerformanceFields, validateForm } from "../server-form";
+import { AdvancedFields, BasicFields, type FieldErrors, GameplayFields, PerformanceFields, validateForm } from "../server-form";
 import type { MinecraftServer, ServerForm } from "../types";
 
 /** Deletes the world and generates a new one (Minecraft only). No backup is taken. */
@@ -133,6 +133,7 @@ export function SettingsTab({ server }: { server: MinecraftServer }) {
     {!can.manage && <p className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">You can view these settings. Only admins can change them.</p>}
     <fieldset disabled={!can.manage} className="min-w-0 space-y-5">
     <Section title="General"><div className="grid gap-5 sm:grid-cols-2"><BasicFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>
+    <Section title="Gameplay" description="Applied each time the server starts."><div className="grid gap-5 sm:grid-cols-2"><GameplayFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>
     <Section title="Performance" description="Applied each time the server is recreated."><div className="grid gap-5 sm:grid-cols-2"><PerformanceFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>
     <div className="grid gap-5 sm:grid-cols-2"><AdvancedFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div>
     </fieldset>

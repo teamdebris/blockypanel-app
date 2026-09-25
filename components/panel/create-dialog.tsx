@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { ApiError, api, errorMessage, initialForm, nextFreePort, serverHref, toPayload } from "./lib";
 import { usePanel } from "./panel-context";
-import { AdvancedFields, BasicFields, type FieldErrors, validateForm } from "./server-form";
+import { AdvancedFields, BasicFields, type FieldErrors, GameplayCollapsible, validateForm } from "./server-form";
 import type { MinecraftServer, ServerForm } from "./types";
 
 const fieldIds: Partial<Record<keyof ServerForm, string>> = { maxPlayers: "players", customProperties: "properties", cpuLimit: "cpu" };
@@ -67,6 +67,7 @@ function MinecraftForm() {
     <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
       <div className="grid gap-5 sm:grid-cols-2">
         <BasicFields form={form} setForm={update} errors={errors} idPrefix="create" servers={servers} creating />
+        <GameplayCollapsible form={form} setForm={update} errors={errors} idPrefix="create" servers={servers} />
         <AdvancedFields form={form} setForm={update} errors={errors} idPrefix="create" servers={servers} creating />
       </div>
       <div className="mt-5 flex items-start gap-3 rounded-xl border border-border bg-muted/50 p-4">

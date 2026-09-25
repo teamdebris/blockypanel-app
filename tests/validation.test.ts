@@ -18,7 +18,22 @@ test("rejects properties that would break RCON backups or the port mapping", () 
   for (const line of ["enable-rcon=false", "rcon.password=x", "RCON.PORT=1", "server-port=1"]) {
     assert.equal(createServerSchema.safeParse({ ...base, customProperties: line }).success, false, line);
   }
-  assert.equal(createServerSchema.safeParse({ ...base, customProperties: "spawn-protection=0" }).success, true);
+  assert.equal(createServerSchema.safeParse({ ...base, customProperties: "max-world-size=5000" }).success, true);
+});
+
+test("gameplay settings have their own controls, with safe defaults", () => {
+  const parsed = createServerSchema.parse(base);
+  assert.equal(parsed.gameMode, "survival");
+  assert.equal(parsed.pvp, true);
+  assert.equal(parsed.onlineMode, true);
+  assert.equal(parsed.spawnProtection, 16);
+  for (const line of ["pvp=false", "GameMode=creative", "online-mode=false", "spawn-protection=0", "hardcore=true"]) {
+    const result = createServerSchema.safeParse({ ...base, customProperties: line });
+    assert.equal(result.success, false, line);
+  }
+  assert.equal(createServerSchema.safeParse({ ...base, gameMode: "peaceful" }).success, false);
+  assert.equal(createServerSchema.safeParse({ ...base, spawnProtection: -1 }).success, false);
+  assert.equal(createServerSchema.safeParse({ ...base, gameMode: "creative", pvp: false, spawnProtection: 0 }).success, true);
 });
 
 test("rejects whitelist entries that could inject into the environment", () => {

@@ -2,6 +2,7 @@ export type ServerStatus = "running" | "starting" | "stopped" | "failed";
 export type ServerType = "PAPER" | "PURPUR" | "VANILLA" | "FABRIC" | "QUILT" | "FORGE" | "NEOFORGE";
 export type JavaVersion = "auto" | "25" | "21" | "17" | "11" | "8";
 export type Difficulty = "peaceful" | "easy" | "normal" | "hard";
+export type GameMode = "survival" | "creative" | "adventure" | "spectator";
 
 export type ServerConfig = {
   name: string; type: ServerType; version: string; javaVersion: JavaVersion; memory: string; cpuLimit: number;
@@ -12,6 +13,7 @@ export type ServerConfig = {
   useMeowiceFlags: boolean; pauseWhenEmptySeconds: number;
   /** Modrinth project IDs the image installs into plugins/ or mods/ on start. */
   modrinthProjects: string[];
+  gameMode: GameMode; pvp: boolean; hardcore: boolean; allowFlight: boolean; commandBlocks: boolean; onlineMode: boolean; spawnProtection: number;
 };
 
 export type ActiveOperation = { kind: string; label: string; step?: string; startedAt: string; actor?: string };
@@ -39,5 +41,5 @@ export type DetachedWorld = { id: string; name: string; diskUsageBytes: number; 
 export type ServerTab = "overview" | "console" | "plugins" | "backups" | "files" | "settings" | "activity";
 export const SERVER_TABS: ServerTab[] = ["overview", "console", "plugins", "backups", "files", "settings", "activity"];
 
-export type NumericFormKey = "port" | "maxPlayers" | "cpuLimit" | "initialMemoryPercent" | "maxMemoryPercent" | "rollingLogMaxFiles" | "viewDistance" | "simulationDistance" | "stopAnnounceDelaySeconds" | "pauseWhenEmptySeconds";
+export type NumericFormKey = "port" | "maxPlayers" | "cpuLimit" | "initialMemoryPercent" | "maxMemoryPercent" | "rollingLogMaxFiles" | "viewDistance" | "simulationDistance" | "stopAnnounceDelaySeconds" | "pauseWhenEmptySeconds" | "spawnProtection";
 export type ServerForm = Omit<ServerConfig, NumericFormKey | "whitelist"> & Record<NumericFormKey, string> & { whitelist: string; eula?: boolean };

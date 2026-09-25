@@ -20,7 +20,7 @@ import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
 import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, recordEvent, recordObservedStatus, removeServerControl } from "@/lib/store";
-import { JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
+import { GAME_MODES, JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
 const docker = new Docker();
 const IMAGE = process.env.MINECRAFT_IMAGE || "itzg/minecraft-server:latest";
@@ -33,6 +33,7 @@ const isDemo = () => process.env.BLOCKY_DEMO === "true";
 const PUBLIC_HOST = (process.env.BLOCKY_PUBLIC_HOST || "").trim();
 
 type ServerType = (typeof SERVER_TYPES)[number];
+type GameMode = (typeof GAME_MODES)[number];
 type JavaVersion = (typeof JAVA_VERSIONS)[number];
 
 type ServerConfig = {
@@ -58,6 +59,13 @@ type ServerConfig = {
   useMeowiceFlags: boolean;
   pauseWhenEmptySeconds: number;
   modrinthProjects: string[];
+  gameMode: GameMode;
+  pvp: boolean;
+  hardcore: boolean;
+  allowFlight: boolean;
+  commandBlocks: boolean;
+  onlineMode: boolean;
+  spawnProtection: number;
 };
 
 type CreateServerInput = ServerConfig & { eula: boolean };
@@ -125,7 +133,7 @@ let serverListCache: { at: number; value?: ServerSummary[]; pending?: Promise<Se
 let serverListGeneration = 0;
 const demoGlobal = globalThis as typeof globalThis & { __blockyDemo?: DemoState };
 
-const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[] };
+const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[], gameMode: "survival" as const, pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: 16 };
 
 function demoState(): DemoState {
   demoGlobal.__blockyDemo ??= {
@@ -210,8 +218,22 @@ function customPropertiesWithoutManagedValues(value: string) {
   }).join("\n").trim();
 }
 
+/**
+ * A gameplay setting from its label, or, for servers created before it had a control, from the
+ * custom server.properties it may have been typed into.
+ */
+function gameplaySetting(labels: Record<string, string>, label: string, property: string) {
+  if (labels[label] !== undefined) return labels[label];
+  const line = (labels["panel.customProperties"] || "").split("\n").find((item) => item.split("=", 1)[0].trim().toLowerCase() === property);
+  return line === undefined ? undefined : line.slice(line.indexOf("=") + 1).trim();
+}
+
 function metaFromLabels(labels: Record<string, string>): ServerMeta {
   const type = labels["panel.type"] as ServerType;
+  const setting = (label: string, property: string) => gameplaySetting(labels, `panel.${label}`, property);
+  const flag = (label: string, property: string, fallback: boolean) => { const value = setting(label, property); return value === undefined ? fallback : value.toLowerCase() === "true"; };
+  const gameMode = setting("gameMode", "gamemode")?.toLowerCase() as GameMode;
+  const spawnProtection = Number(setting("spawnProtection", "spawn-protection") ?? 16);
   const javaVersion = labels["panel.javaVersion"] as JavaVersion;
   return {
     id: labels["panel.id"],
@@ -237,6 +259,13 @@ function metaFromLabels(labels: Record<string, string>): ServerMeta {
     useMeowiceFlags: labels["panel.useMeowiceFlags"] !== "false",
     pauseWhenEmptySeconds: Number(labels["panel.pauseWhenEmptySeconds"] || 300),
     modrinthProjects: decodeList(labels["panel.modrinthProjects"]).filter(isModrinthId),
+    gameMode: GAME_MODES.includes(gameMode) ? gameMode : "survival",
+    pvp: flag("pvp", "pvp", true),
+    hardcore: flag("hardcore", "hardcore", false),
+    allowFlight: flag("allowFlight", "allow-flight", false),
+    commandBlocks: flag("commandBlocks", "enable-command-block", false),
+    onlineMode: flag("onlineMode", "online-mode", true),
+    spawnProtection: Number.isInteger(spawnProtection) && spawnProtection >= 0 ? Math.min(spawnProtection, 1000) : 16,
     createdAt: labels["panel.createdAt"] || new Date().toISOString(),
     dataPath: labels["panel.dataPath"],
   };
@@ -268,6 +297,13 @@ function labelsFor(meta: ServerMeta) {
     "panel.useMeowiceFlags": String(meta.useMeowiceFlags),
     "panel.pauseWhenEmptySeconds": String(meta.pauseWhenEmptySeconds),
     "panel.modrinthProjects": encodeList(meta.modrinthProjects ?? []),
+    "panel.gameMode": meta.gameMode,
+    "panel.pvp": String(meta.pvp),
+    "panel.hardcore": String(meta.hardcore),
+    "panel.allowFlight": String(meta.allowFlight),
+    "panel.commandBlocks": String(meta.commandBlocks),
+    "panel.onlineMode": String(meta.onlineMode),
+    "panel.spawnProtection": String(meta.spawnProtection),
     "panel.createdAt": meta.createdAt,
     "panel.dataPath": meta.dataPath,
     // Only Minecraft is supported; the label lets the panel skip containers of other games.
@@ -286,6 +322,9 @@ function createOptions(meta: ServerMeta, rconPassword = randomBytes(24).toString
     `SIMULATION_DISTANCE=${meta.simulationDistance}`, `STOP_SERVER_ANNOUNCE_DELAY=${meta.stopAnnounceDelaySeconds}`,
     `USE_MEOWICE_FLAGS=${meta.useMeowiceFlags ? "TRUE" : "FALSE"}`,
     `PAUSE_WHEN_EMPTY_SECONDS=${meta.pauseWhenEmptySeconds}`,
+    `MODE=${meta.gameMode}`, `PVP=${meta.pvp}`, `HARDCORE=${meta.hardcore}`,
+    `ALLOW_FLIGHT=${meta.allowFlight ? "TRUE" : "FALSE"}`, `ENABLE_COMMAND_BLOCK=${meta.commandBlocks}`,
+    `ONLINE_MODE=${meta.onlineMode ? "TRUE" : "FALSE"}`, `SPAWN_PROTECTION=${meta.spawnProtection}`,
     ...modrinthEnv(meta.modrinthProjects ?? []),
   ];
   if (meta.whitelist.length) env.push(`WHITELIST=${meta.whitelist.join(",")}`, "ENFORCE_WHITELIST=TRUE", "OVERRIDE_WHITELIST=TRUE");
@@ -348,7 +387,8 @@ async function readServerMeta(id: string): Promise<ServerMeta | undefined> {
   try {
     const stored = JSON.parse(await readFile(serverMetaPath(id), "utf8")) as Partial<ServerMeta> & { game?: string };
     if (stored.game !== undefined && stored.game !== "minecraft") return undefined;
-    return { ...metaFromLabels({}), ...stored, id, dataPath: dockerServerDataPath(id) } as ServerMeta;
+    // Defaults (and gameplay settings still in custom properties) from a label-less read, then the saved values.
+    return { ...metaFromLabels({ "panel.customProperties": typeof stored.customProperties === "string" ? stored.customProperties : "" }), ...stored, id, dataPath: dockerServerDataPath(id) } as ServerMeta;
   } catch { return undefined; }
 }
 

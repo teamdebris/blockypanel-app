@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Field } from "./common";
 import { javaVersions, memoryOptions, moddedTypes, serverTypes } from "./lib";
-import type { Difficulty, JavaVersion, MinecraftServer, NumericFormKey, ServerForm, ServerType } from "./types";
+import type { Difficulty, GameMode, JavaVersion, MinecraftServer, NumericFormKey, ServerForm, ServerType } from "./types";
 
 export type FieldErrors = Partial<Record<keyof ServerForm, string>>;
 
@@ -45,6 +45,8 @@ export function validateForm(form: ServerForm, servers: MinecraftServer[], selfI
   if (Number.isNaN(cpu) || cpu < 0 || cpu > 64) errors.cpuLimit = "Between 0 (unlimited) and 64 cores.";
   if (Number(form.simulationDistance) > Number(form.viewDistance)) errors.simulationDistance = "Can't be larger than the view distance.";
   if (Number(form.initialMemoryPercent) > Number(form.maxMemoryPercent)) errors.initialMemoryPercent = "Can't exceed the maximum heap.";
+  const protection = Number(form.spawnProtection);
+  if (!Number.isInteger(protection) || protection < 0 || protection > 1000) errors.spawnProtection = "Between 0 and 1000 blocks.";
   return errors;
 }
 
@@ -92,6 +94,13 @@ export function BasicFields({ form, setForm, errors, idPrefix, creating = false 
   </>;
 }
 
+/** Gameplay settings, collapsed, for the new-server dialog. */
+export function GameplayCollapsible(props: FormProps) {
+  return <Collapsible title="Gameplay" description="Game mode, PvP, hardcore, spawn protection, and online mode" defaultOpen={Boolean(props.errors.spawnProtection)}>
+    <GameplayFields {...props} />
+  </Collapsible>;
+}
+
 export function AdvancedFields({ form, setForm, errors, idPrefix, creating = false }: FormProps & { creating?: boolean }) {
   const id = (name: string) => `${idPrefix}-${name}`;
   return <Collapsible title="Advanced" description="Port, Java, CPU limit, whitelist, world seed, and custom server.properties" defaultOpen={Boolean(errors.port || errors.whitelist || errors.customProperties || errors.cpuLimit)}>
@@ -102,8 +111,41 @@ export function AdvancedFields({ form, setForm, errors, idPrefix, creating = fal
     <Field label="CPU limit" id={id("cpu")} error={errors.cpuLimit} hint="Cores this server may use; 0 means no limit.">{(props) => <Input {...props} type="number" min={0} max={64} step={0.25} value={form.cpuLimit} onChange={(event) => setForm({ ...form, cpuLimit: event.target.value })} />}</Field>
     <Field label="World seed" id={id("seed")} hint={creating ? "Leave empty for a random world." : "Only used when a new world is generated."}>{(props) => <Input {...props} value={form.seed} onChange={(event) => setForm({ ...form, seed: event.target.value })} autoComplete="off" />}</Field>
     <Field label="Whitelist" id={id("whitelist")} wide error={errors.whitelist} hint="One username per line. When set, only these players can join.">{(props) => <Textarea {...props} rows={3} value={form.whitelist} onChange={(event) => setForm({ ...form, whitelist: event.target.value })} placeholder={"Steve\nAlex"} autoCapitalize="off" spellCheck={false} />}</Field>
-    <Field label="Custom server.properties" id={id("properties")} wide error={errors.customProperties} hint="One key=value per line, e.g. spawn-protection=0. These survive restarts, unlike editing the file directly.">{(props) => <Textarea {...props} className="font-mono text-xs" rows={4} value={form.customProperties} onChange={(event) => setForm({ ...form, customProperties: event.target.value })} placeholder="spawn-protection=0" autoCapitalize="off" spellCheck={false} />}</Field>
+    <Field label="Custom server.properties" id={id("properties")} wide error={errors.customProperties} hint="One key=value per line, e.g. max-world-size=5000. These survive restarts, unlike editing the file directly.">{(props) => <Textarea {...props} className="font-mono text-xs" rows={4} value={form.customProperties} onChange={(event) => setForm({ ...form, customProperties: event.target.value })} placeholder="max-world-size=5000" autoCapitalize="off" spellCheck={false} />}</Field>
   </Collapsible>;
+}
+
+function Toggle({ id, label, hint, checked, onChange, warning }: { id: string; label: string; hint: string; checked: boolean; onChange: (checked: boolean) => void; warning?: React.ReactNode }) {
+  return <div className="field">
+    <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+      <Label htmlFor={id} className="flex-1 flex-col items-start gap-0.5 font-normal leading-5"><span className="block font-medium">{label}</span><span className="block text-xs text-muted-foreground">{hint}</span></Label>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+    {warning}
+  </div>;
+}
+
+const gameModes: { value: GameMode; label: string }[] = [
+  { value: "survival", label: "Survival" }, { value: "creative", label: "Creative" }, { value: "adventure", label: "Adventure" }, { value: "spectator", label: "Spectator" },
+];
+
+/** The server.properties people change most, as controls. Applied every time the server starts. */
+export function GameplayFields({ form, setForm, errors, idPrefix }: FormProps) {
+  const id = (name: string) => `${idPrefix}-${name}`;
+  return <>
+    <Field label="Game mode" id={id("gamemode")} hint="For players joining for the first time. Existing players keep theirs.">
+      {(props) => <Select value={form.gameMode} onValueChange={(gameMode: GameMode) => setForm({ ...form, gameMode })}><SelectTrigger {...props} className="w-full"><SelectValue /></SelectTrigger><SelectContent>{gameModes.map((mode) => <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>)}</SelectContent></Select>}
+    </Field>
+    <Field label="Spawn protection" id={id("spawn-protection")} error={errors.spawnProtection} hint="Blocks around spawn only operators can build in. 0 turns it off.">
+      {(props) => <Input {...props} type="number" inputMode="numeric" min={0} max={1000} value={form.spawnProtection} onChange={(event) => setForm({ ...form, spawnProtection: event.target.value })} />}
+    </Field>
+    <Toggle id={id("pvp")} label="PvP" hint="Players can hurt each other." checked={form.pvp} onChange={(pvp) => setForm({ ...form, pvp })} />
+    <Toggle id={id("flight")} label="Allow flight" hint="Stops kicks for flying. Needed by some mods and plugins." checked={form.allowFlight} onChange={(allowFlight) => setForm({ ...form, allowFlight })} />
+    <Toggle id={id("command-blocks")} label="Command blocks" hint="Lets command blocks run. Only operators can place them." checked={form.commandBlocks} onChange={(commandBlocks) => setForm({ ...form, commandBlocks })} />
+    <Toggle id={id("hardcore")} label="Hardcore" hint="One life: players become spectators when they die. Best set before the world is made." checked={form.hardcore} onChange={(hardcore) => setForm({ ...form, hardcore })} />
+    <Toggle id={id("online-mode")} label="Online mode" hint="Checks every player's Minecraft account when they join." checked={form.onlineMode} onChange={(onlineMode) => setForm({ ...form, onlineMode })}
+      warning={!form.onlineMode && <p className="flex items-start gap-1.5 text-xs text-warning"><TriangleAlert className="mt-px size-3.5 shrink-0" />Anyone can join with any name, including yours, and the whitelist can&apos;t tell players apart. Only turn this off on a private network, or behind a proxy like Velocity that checks accounts.</p>} />
+  </>;
 }
 
 const performancePresets = {
