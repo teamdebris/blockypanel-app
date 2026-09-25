@@ -56,6 +56,7 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/servers/[id]/backups/[name]": { GET: "admin", DELETE: "admin" },
   "/api/servers/[id]/files": { GET: "admin", POST: "admin", PATCH: "admin", PUT: "admin", DELETE: "admin" },
   "/api/servers/[id]/reroll": { POST: "admin" },
+  "/api/servers/[id]/world": { POST: "admin" },
   // Anyone can see the schedule; creating, changing, and running tasks is admin-only.
   "/api/servers/[id]/tasks": { GET: "viewer", POST: "admin" },
   "/api/servers/[id]/tasks/[taskId]": { PATCH: "admin", DELETE: "admin", POST: "admin" },

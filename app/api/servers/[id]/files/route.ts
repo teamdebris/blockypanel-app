@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
-import { createServerDirectory, deleteServerFile, listServerFiles, readServerTextFile, renameServerFile, serverFileForDownload, uploadServerFile, writeServerTextFile } from "@/lib/files";
+import { createServerDirectory, deleteServerFile, extractServerArchive, listServerFiles, readServerTextFile, renameServerFile, serverFileForDownload, uploadServerFile, writeServerTextFile } from "@/lib/files";
 import { BadRequestError } from "@/lib/errors";
 import { apiError } from "@/lib/responses";
 import { fileDirectorySchema, filePathSchema, fileRenameSchema, fileWriteSchema } from "@/lib/validation";
@@ -27,7 +27,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const body = await request.json();
     const { id } = await context.params;
-    // { from, to } renames an entry; { path } creates a directory.
+    // { from, to } renames an entry; { extract } unpacks an archive where it is; { path } creates a directory.
+    if (body && typeof body === "object" && "extract" in body) {
+      const result = await extractServerArchive(id, filePathSchema.min(1).parse((body as { extract: unknown }).extract));
+      return NextResponse.json(result);
+    }
     if (body && typeof body === "object" && "from" in body) {
       const { from, to } = fileRenameSchema.parse(body);
       await renameServerFile(id, from, to);

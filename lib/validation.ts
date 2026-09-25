@@ -118,6 +118,7 @@ export const taskSchema = z.object({
   if (task.kind === "broadcast" && !task.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "Enter a message." });
 });
 
+export const worldImportSchema = z.object({ archive: z.string().min(1).max(1024) });
 export const rerollSchema = z.object({ seed: z.string().trim().max(64).refine(isSafeSeed, "The seed can't contain line breaks.").default("") });
 
 // ---- Offsite backups ----

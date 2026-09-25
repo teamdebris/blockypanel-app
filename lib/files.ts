@@ -6,13 +6,16 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
+import { extractArchive } from "@/lib/archive";
 import { assertManagedServer } from "@/lib/docker";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
 import { serverDataPath } from "@/lib/paths";
 import { recordEvent } from "@/lib/store";
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
-const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
+// Worlds are often over a gigabyte; 4 GB is also where plain (non-zip64) zip files top out.
+const MAX_UPLOAD_BYTES = 4 * 1024 ** 3;
+export const ARCHIVE_NAME = /\.(zip|tar|tar\.gz|tgz)$/i;
 // Not defined on Windows, where the dev server may run; symlink swaps are a Linux-host concern.
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
@@ -237,7 +240,7 @@ export async function uploadServerFile(id: string, requested: string, body: Read
     const chunks: Buffer[] = [];
     for await (const chunk of webStreamChunks(body)) chunks.push(Buffer.from(chunk));
     const content = Buffer.concat(chunks);
-    if (content.length > MAX_UPLOAD_BYTES) throw new BadRequestError("Uploads are limited to 512 MB.");
+    if (content.length > MAX_UPLOAD_BYTES) throw new BadRequestError("Uploads are limited to 4 GB.");
     demoFiles(id).set(relative, { type: "file", content, modifiedAt: new Date().toISOString() });
   } else {
     const { root, target } = await safeTarget(id, relative, true);
@@ -247,7 +250,7 @@ export async function uploadServerFile(id: string, requested: string, body: Read
     await assertContained(root, parent);
     const temporary = path.join(parent, `.blocky-upload-${randomUUID()}`);
     let bytes = 0;
-    const limiter = new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > MAX_UPLOAD_BYTES ? new BadRequestError("Uploads are limited to 512 MB.") : null, chunk); } });
+    const limiter = new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > MAX_UPLOAD_BYTES ? new BadRequestError("Uploads are limited to 4 GB.") : null, chunk); } });
     try {
       await pipeline(Readable.from(webStreamChunks(body)), limiter, createWriteStream(temporary, { flags: "wx", mode: 0o660 }));
       // Ownership is set on our own temp file, then rename() replaces whatever is at the target
@@ -284,6 +287,59 @@ export async function renameServerFile(id: string, from: string, to: string) {
     await rename(sourcePath, destinationPath);
   }
   await recordEvent(id, "file-rename", `${source} was renamed to ${destination}.`, "info");
+}
+
+/** Archive errors are the uploader's to fix (a bad or hostile file), so they're shown as such. */
+export function archiveProblem(error: unknown): never {
+  if (error instanceof Error && error.name === "ArchiveError") throw new BadRequestError(error.message);
+  throw error;
+}
+
+/** An archive in a server's data folder, checked like any other path the panel touches. */
+export async function serverArchivePath(id: string, requested: string) {
+  const relative = cleanRelativePath(requested);
+  if (!ARCHIVE_NAME.test(relative)) throw new BadRequestError("Choose a .zip, .tar, or .tar.gz file.");
+  const { root, target } = await safeTarget(id, relative);
+  await assertContained(root, path.dirname(target));
+  if (!(await lstat(target)).isFile()) throw new BadRequestError("That isn't a file.");
+  return { root, target, relative };
+}
+
+/** Hands a tree the panel just created to the game's user. lchown never follows links (none are made). */
+export async function chownTree(directory: string) {
+  await lchown(directory, 1000, 1000).catch(() => undefined);
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) await chownTree(full);
+    else if (entry.isFile()) await lchown(full, 1000, 1000).catch(() => undefined);
+  }
+}
+
+/**
+ * Unpacks an archive into the folder it's in. It's extracted into a fresh hidden folder first, so a
+ * hostile archive can't touch existing files; then, if nothing it contains already exists here, its
+ * contents are moved into place.
+ */
+export async function extractServerArchive(id: string, requested: string) {
+  if (process.env.BLOCKY_DEMO === "true") throw new BadRequestError("Extracting requires a real Docker host.");
+  const { root, target, relative } = await serverArchivePath(id, requested);
+  const parent = path.dirname(target);
+  const staging = path.join(parent, `.blocky-extract-${randomUUID()}`);
+  await mkdir(staging, { mode: 0o770 });
+  try {
+    const result = await extractArchive(target, staging).catch(archiveProblem);
+    const names = await readdir(staging);
+    const existing: string[] = [];
+    for (const name of names) if (await lstat(path.join(parent, name)).catch(() => undefined)) existing.push(name);
+    if (existing.length) throw new BadRequestError(`These are already here: ${existing.slice(0, 5).join(", ")}${existing.length > 5 ? ", …" : ""}. Rename or delete them first.`);
+    await chownTree(staging);
+    await assertContained(root, parent);
+    for (const name of names) await rename(path.join(staging, name), path.join(parent, name));
+    await recordEvent(id, "file-extract", `${relative} was extracted (${result.files} file${result.files === 1 ? "" : "s"}${result.skipped ? `; ${result.skipped} links or special files skipped` : ""}).`, "info");
+    return result;
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 export async function deleteServerFile(id: string, requested: string) {

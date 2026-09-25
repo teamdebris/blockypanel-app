@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, Download, FileText, Folder, FolderPlus, Info, LoaderCircle, MoreHorizontal, Pencil, Save, TextCursorInput, Trash2, Upload } from "lucide-react";
+import { ChevronRight, Download, FileArchive, FileText, Folder, FolderPlus, Globe, Info, LoaderCircle, MoreHorizontal, PackageOpen, Pencil, Save, TextCursorInput, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -73,6 +73,8 @@ function Editor({ server, file, onClose, onSaved }: { server: MinecraftServer; f
   </Dialog>;
 }
 
+const ARCHIVE = /\.(zip|tar|tar\.gz|tgz)$/i;
+
 export function FilesTab({ server }: { server: MinecraftServer }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -88,6 +90,7 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
   const [pendingOverwrite, setPendingOverwrite] = useState<File[] | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ServerFileEntry | null>(null);
   const [renaming, setRenaming] = useState<{ entry: ServerFileEntry; name: string } | null>(null);
+  const [pendingWorld, setPendingWorld] = useState<ServerFileEntry | null>(null);
   const [dragging, setDragging] = useState(false);
   const uploadInput = useRef<HTMLInputElement>(null);
   const endpoint = useCallback((path: string, mode?: string) => { const query = new URLSearchParams({ path }); if (mode) query.set("mode", mode); return `/api/servers/${server.id}/files?${query}`; }, [server.id]);
@@ -153,6 +156,23 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
     finally { setWorking(false); }
   }
 
+  async function extract(entry: ServerFileEntry) {
+    setWorking(true);
+    try {
+      const result = await api<{ files: number; skipped: number }>(endpoint(""), { method: "POST", body: JSON.stringify({ extract: entry.path }) });
+      toast.success(`Extracted ${result.files} file${result.files === 1 ? "" : "s"}.`, { description: result.skipped ? `${result.skipped} links or special files were skipped.` : undefined });
+      await load();
+    } catch (error) { toast.error(errorMessage(error, "Couldn't extract it.")); }
+    finally { setWorking(false); }
+  }
+
+  async function importAsWorld(entry: ServerFileEntry) {
+    setWorking(true);
+    try { const result = await api<{ message: string }>(`/api/servers/${server.id}/world`, { method: "POST", body: JSON.stringify({ archive: entry.path }) }); toast.success(result.message); }
+    catch (error) { toast.error(errorMessage(error, "Couldn't import the world.")); }
+    finally { setWorking(false); }
+  }
+
   async function rename() {
     if (!renaming) return;
     const name = renaming.name.trim();
@@ -165,7 +185,7 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
 
   const crumbs = currentPath ? currentPath.split("/") : [];
   return <div className="space-y-4">
-    <p className="flex gap-2 rounded-xl border border-border bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><Info className="mt-0.5 size-4 shrink-0" /><span>Changes go straight to the live server folder. Stop the server before replacing a world or editing files the game might overwrite.</span></p>
+    <p className="flex gap-2 rounded-xl border border-border bg-muted/50 p-3 text-xs leading-5 text-muted-foreground"><Info className="mt-0.5 size-4 shrink-0" /><span>Changes go straight to the live server folder. To bring in a world, upload its .zip and choose Use as the world from its menu.</span></p>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <nav aria-label="Folder" className="flex min-w-0 items-center gap-0.5 overflow-x-auto text-sm">
         <button type="button" className="rounded px-2 py-1 font-mono text-foreground hover:bg-accent" onClick={() => goTo("")}>/data</button>
@@ -193,7 +213,7 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
       {loading ? <div className="space-y-2 p-4"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div>
         : entries.length ? <ul className="divide-y divide-border">{entries.map((entry) => <li key={entry.path} className="flex items-center gap-2 px-2 py-1 hover:bg-muted/40 sm:px-3">
           <button type="button" className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-2 text-left" onClick={() => void open(entry)} disabled={working}>
-            {entry.type === "directory" ? <Folder className="size-4 shrink-0" /> : <FileText className="size-4 shrink-0 text-muted-foreground" />}
+            {entry.type === "directory" ? <Folder className="size-4 shrink-0" /> : ARCHIVE.test(entry.name) ? <FileArchive className="size-4 shrink-0 text-muted-foreground" /> : <FileText className="size-4 shrink-0 text-muted-foreground" />}
             <span className="min-w-0 flex-1 truncate text-sm">{entry.name}</span>
             <span className="hidden shrink-0 text-xs text-muted-foreground sm:block" title={formatDate(entry.modifiedAt)}>{formatRelative(entry.modifiedAt, now)}</span>
             <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{entry.type === "file" ? formatBytes(entry.size) : "Folder"}</span>
@@ -203,6 +223,10 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
             <DropdownMenuContent align="end">
               {entry.type === "file" && entry.editable && <DropdownMenuItem onSelect={() => void open(entry)}><Pencil />Edit</DropdownMenuItem>}
               {entry.type === "file" && <DropdownMenuItem asChild><a href={endpoint(entry.path, "download")}><Download />Download</a></DropdownMenuItem>}
+              {entry.type === "file" && ARCHIVE.test(entry.name) && <>
+                <DropdownMenuItem onSelect={() => void extract(entry)}><PackageOpen />Extract here</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setPendingWorld(entry)} disabled={Boolean(server.operation)}><Globe />Use as the world…</DropdownMenuItem>
+              </>}
               <DropdownMenuItem onSelect={() => setRenaming({ entry, name: entry.name })}><TextCursorInput />Rename</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setPendingDelete(entry)}><Trash2 />Delete</DropdownMenuItem>
@@ -217,6 +241,11 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
     </ConfirmDialog>
     <ConfirmDialog open={Boolean(pendingOverwrite)} onOpenChange={(open) => !open && setPendingOverwrite(null)} title="Replace existing files?" confirmLabel="Replace" onConfirm={() => { const files = pendingOverwrite; setPendingOverwrite(null); if (files) void startUploads(files); }}>
       <p>These already exist in /{currentPath || ""} and will be replaced: <span className="font-mono text-foreground">{pendingOverwrite?.filter((file) => entries.some((entry) => entry.name === file.name)).map((file) => file.name).join(", ")}</span></p>
+    </ConfirmDialog>
+    <ConfirmDialog open={Boolean(pendingWorld)} onOpenChange={(open) => !open && setPendingWorld(null)} title={`Replace ${server.name}'s world with ${pendingWorld?.name}?`} confirmLabel="Replace the world" destructive onConfirm={() => pendingWorld && void importAsWorld(pendingWorld)}>
+      <p>The world inside the archive (the folder with <span className="font-mono">level.dat</span>) becomes the server&apos;s world, including its Nether and End. Plugins, mods, and settings stay as they are.</p>
+      <p>A safety backup of the current world is taken first, so you can undo this from Backups. The server restarts{server.playersOnline ? `, disconnecting ${server.playersOnline} player${server.playersOnline === 1 ? "" : "s"}` : ""}.</p>
+      <p>Singleplayer worlds and worlds from other hosts both work. The archive stays in Files; delete it afterwards to free the space.</p>
     </ConfirmDialog>
     <Dialog open={Boolean(renaming)} onOpenChange={(open) => !open && setRenaming(null)}>
       <DialogContent className="border-border bg-popover text-foreground">

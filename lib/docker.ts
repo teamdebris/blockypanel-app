@@ -12,7 +12,7 @@ import {
   incrementalBackupRecord, listIncrementalSnapshots, pruneIncrementalRepository, restoreIncrementalSnapshot,
 } from "@/lib/incremental-backups";
 import { offsiteSettings, serverOffsiteStatus } from "@/lib/offsite-settings";
-import { activeOperation, type ActiveOperation, type FinishedOperation, lastOperation, setOperationStep, startServerOperation, withServerLock } from "@/lib/operations";
+import { activeOperation, type ActiveOperation, type FinishedOperation, lastOperation, type OperationKind, setOperationStep, startServerOperation, withServerLock } from "@/lib/operations";
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isModrinthId, modrinthEnv } from "@/lib/modrinth-core";
 import { parsePlayerList, parseStatusCount } from "@/lib/players";
@@ -1004,40 +1004,68 @@ export async function restoreBackup(id: string, name: string) {
  * `restore` to fill it, and starts it again. If anything fails, the safety backup is put back.
  */
 export async function restoreServerFiles(id: string, label: string, restore: () => Promise<void>, success: string) {
+  return changeServerFiles(id, { kind: "restore", label, step: "Restoring world files", success, change: async (meta) => { await clearServerData(meta); await restore(); } });
+}
+
+type FileChange = {
+  kind: OperationKind;
+  label: string;
+  /** Shown while `change` runs. */
+  step: string;
+  success: string;
+  /** Runs first, with the server still up (e.g. unpacking an upload), so downtime stays short. */
+  prepare?: () => Promise<void>;
+  /** Runs with the server stopped, after a safety backup. */
+  change: (meta: ServerMeta) => Promise<void>;
+  /** Always runs at the end. */
+  cleanup?: () => Promise<void>;
+  startupTimeoutMs?: number;
+};
+
+/**
+ * Changes a server's files with it stopped: safety backup, stop, `change`, start, health check. If
+ * anything after the stop fails, the safety backup is put back and the server started again.
+ */
+export async function changeServerFiles(id: string, options: FileChange) {
   const info = await findInfo(id);
-  return startServerOperation(id, "restore", label, async () => {
-    const container = docker.getContainer(info.Id);
-    const meta = metaFromLabels(info.Labels);
-    setOperationStep(id, "Taking a safety backup");
-    const safety = await createBackupUnlocked(id, info, { kind: "pre-restore", prune: false });
-    setOperationStep(id, "Stopping the server");
-    await stopContainer(container);
-    try {
-      setOperationStep(id, "Restoring world files");
-      await clearServerData(meta);
-      await restore();
-      diskUsage.delete(id);
-      await container.start();
-      setOperationStep(id, "Waiting for Minecraft to start");
-      await waitUntilReady(container);
-      await applyRetention(id, (await getServerControl(id)).backupPolicy.retention);
-      await recordEvent(id, "restore", success, "success");
-    } catch (error) {
-      const failure = describe(error, "Restore failed.");
-      setOperationStep(id, "Restore failed; reapplying the safety backup");
-      try {
-        try { const state = await container.inspect(); if (state.State.Running) await container.stop({ t: 10 }); } catch { /* stopped */ }
-        await restoreStoredBackup(meta, safety.backup);
-        await container.start();
-        await waitUntilReady(container);
-      } catch (rollbackError) {
-        throw new Error(`${failure} Reapplying the pre-restore backup also failed: ${describe(rollbackError, "unknown error")}. The server needs manual attention; ${safety.backup} is intact.`);
-      }
-      throw new Error(`${failure} The pre-restore backup was reapplied.`);
-    } finally {
-      invalidateServerList();
-    }
+  return startServerOperation(id, options.kind, options.label, async () => {
+    try { await changeServerFilesUnlocked(id, info, options); }
+    finally { await options.cleanup?.().catch(() => undefined); }
   });
+}
+
+async function changeServerFilesUnlocked(id: string, info: ContainerInfo, options: FileChange) {
+  const container = docker.getContainer(info.Id);
+  const meta = metaFromLabels(info.Labels);
+  await options.prepare?.();
+  setOperationStep(id, "Taking a safety backup");
+  const safety = await createBackupUnlocked(id, info, { kind: `pre-${options.kind}`, prune: false });
+  setOperationStep(id, "Stopping the server");
+  await stopContainer(container);
+  try {
+    setOperationStep(id, options.step);
+    await options.change(meta);
+    diskUsage.delete(id);
+    await container.start();
+    setOperationStep(id, "Waiting for Minecraft to start");
+    await waitUntilReady(container, options.startupTimeoutMs);
+    await applyRetention(id, (await getServerControl(id)).backupPolicy.retention);
+    await recordEvent(id, options.kind, options.success, "success");
+  } catch (error) {
+    const failure = describe(error, `${options.label} failed.`);
+    setOperationStep(id, `${options.label} failed; reapplying the safety backup`);
+    try {
+      try { const state = await container.inspect(); if (state.State.Running) await container.stop({ t: 10 }); } catch { /* stopped */ }
+      await restoreStoredBackup(meta, safety.backup);
+      await container.start();
+      await waitUntilReady(container);
+    } catch (rollbackError) {
+      throw new Error(`${failure} Reapplying the safety backup also failed: ${describe(rollbackError, "unknown error")}. The server needs manual attention; ${safety.backup} is intact.`);
+    }
+    throw new Error(`${failure} The safety backup was reapplied.`);
+  } finally {
+    invalidateServerList();
+  }
 }
 
 /** A server's settings as stored with its offsite copies (its server.json, without host paths). */

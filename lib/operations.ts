@@ -4,7 +4,7 @@ import { currentActor, runAsActor } from "@/lib/actor";
 import { ConflictError } from "@/lib/errors";
 import { recordEvent } from "@/lib/store";
 
-export type OperationKind = "create" | "start" | "stop" | "restart" | "backup" | "update" | "settings" | "restore" | "remove" | "backup-delete" | "scheduled-backup" | "reroll" | "scheduled-restart";
+export type OperationKind = "create" | "start" | "stop" | "restart" | "backup" | "update" | "settings" | "restore" | "remove" | "backup-delete" | "scheduled-backup" | "reroll" | "scheduled-restart" | "world-import";
 
 export type ActiveOperation = { kind: OperationKind; label: string; step?: string; startedAt: string; actor?: string };
 export type FinishedOperation = ActiveOperation & { ok: boolean; message: string; finishedAt: string };

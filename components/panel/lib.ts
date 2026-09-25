@@ -168,7 +168,7 @@ export const backupKindLabels: Record<BackupKind, string> = { scheduled: "Schedu
 /** Why a safety backup exists, e.g. "before a settings change". */
 export function safetyReason(kind: string) {
   const reason = kind.replace(/^pre-/, "");
-  return reason === "settings" ? "before a settings change" : reason === "update" ? "before a software update" : reason === "restore" ? "before a restore" : `before ${reason}`;
+  return reason === "settings" ? "before a settings change" : reason === "update" ? "before a software update" : reason === "restore" ? "before a restore" : reason === "world-import" ? "before a world import" : `before ${reason}`;
 }
 
 /** The address players type into Minecraft. The default port is omitted. */
