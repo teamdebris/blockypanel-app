@@ -19,6 +19,7 @@ function Stat({ icon: Icon, label, value, children }: { icon: typeof Cpu; label:
 }
 
 function PlayerRow({ server, name }: { server: MinecraftServer; name: string }) {
+  const { can } = usePanel();
   const [confirm, setConfirm] = useState<"kick" | "op" | null>(null);
   async function send(command: string, success: string) {
     try {
@@ -31,14 +32,15 @@ function PlayerRow({ server, name }: { server: MinecraftServer; name: string }) 
     {/* eslint-disable-next-line @next/next/no-img-element -- small external avatar; next/image would need remote config */}
     <img src={`https://mc-heads.net/avatar/${encodeURIComponent(name)}/28`} alt="" width={28} height={28} className="size-7 rounded" loading="lazy" />
     <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
-    <DropdownMenu>
+    {/* These are console commands, which need the Operator role (the server enforces it too). */}
+    {can.console && <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${name}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {!whitelisted && server.whitelist.length > 0 && <DropdownMenuItem onSelect={() => void send(`whitelist add ${name}`, `${name} added to the whitelist`)}><UserPlus />Add to whitelist</DropdownMenuItem>}
         <DropdownMenuItem onSelect={() => setConfirm("op")}><ShieldPlus />Make operator</DropdownMenuItem>
         <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setConfirm("kick")}><UserMinus />Kick</DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>
+    </DropdownMenu>}
     <ConfirmDialog open={confirm === "kick"} onOpenChange={(open) => !open && setConfirm(null)} title={`Kick ${name}?`} confirmLabel="Kick player" destructive onConfirm={() => void send(`kick ${name}`, `${name} was kicked`)}><p>They&apos;re disconnected but can rejoin right away.</p></ConfirmDialog>
     <ConfirmDialog open={confirm === "op"} onOpenChange={(open) => !open && setConfirm(null)} title={`Make ${name} an operator?`} confirmLabel="Make operator" onConfirm={() => void send(`op ${name}`, `${name} is now an operator`)}><p>Operators can run any command, including changing the world, banning players, and stopping the server.</p></ConfirmDialog>
   </li>;
