@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { currentActor } from "@/lib/actor";
 import { notify } from "@/lib/notify";
 import { PANEL_ROOT } from "@/lib/paths";
+import { MAX_TASKS, type ScheduledTask, type TaskResult } from "@/lib/tasks";
 
 export type BackupPolicy = {
   enabled: boolean;
@@ -40,6 +41,7 @@ type ServerControl = {
   maintenance?: MaintenanceState;
   observedStatus?: string;
   observedRestartCount?: number;
+  tasks?: ScheduledTask[];
 };
 
 type ControlState = {
@@ -187,6 +189,38 @@ export async function recordObservedStatus(id: string, status: string, serverNam
     }
     server.observedStatus = status;
     server.observedRestartCount = restartCount;
+  });
+}
+
+/** Adds a task, or replaces the one with the same ID. */
+export async function saveTask(id: string, task: ScheduledTask) {
+  return mutate((state) => {
+    const server = ensureServer(state, id);
+    const tasks = server.tasks ?? [];
+    const index = tasks.findIndex((item) => item.id === task.id);
+    if (index === -1 && tasks.length >= MAX_TASKS) throw new Error(`A server can have at most ${MAX_TASKS} scheduled tasks.`);
+    if (index === -1) tasks.push(task); else tasks[index] = task;
+    server.tasks = tasks;
+    return structuredClone(task);
+  });
+}
+
+export async function deleteTask(id: string, taskId: string) {
+  return mutate((state) => {
+    const server = ensureServer(state, id);
+    const before = server.tasks?.length ?? 0;
+    server.tasks = (server.tasks ?? []).filter((item) => item.id !== taskId);
+    return server.tasks.length !== before;
+  });
+}
+
+/** Records a run (or skip) of the occurrence scheduled for `scheduledAt`. */
+export async function markTaskRun(id: string, taskId: string, scheduledAt: string, result: Omit<TaskResult, "at">) {
+  return mutate((state) => {
+    const task = ensureServer(state, id).tasks?.find((item) => item.id === taskId);
+    if (!task) return;
+    task.lastRunAt = scheduledAt;
+    task.lastResult = { ...result, at: new Date().toISOString() };
   });
 }
 

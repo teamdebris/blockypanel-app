@@ -38,7 +38,7 @@ export const javaVersions: { value: JavaVersion; label: string }[] = [
 
 export const memoryOptions = ["2G", "4G", "6G", "8G", "12G", "16G"];
 
-export const tabLabels: Record<ServerTab, string> = { overview: "Overview", console: "Console", plugins: "Plugins", backups: "Backups", files: "Files", settings: "Settings", activity: "Activity" };
+export const tabLabels: Record<ServerTab, string> = { overview: "Overview", console: "Console", plugins: "Plugins", backups: "Backups", schedule: "Schedule", files: "Files", settings: "Settings", activity: "Activity" };
 
 /** Tab names for a specific server: the add-ons tab is "Mods" on mod loaders. */
 export function serverTabLabel(server: Pick<MinecraftServer, "type"> | undefined, tab: ServerTab) {

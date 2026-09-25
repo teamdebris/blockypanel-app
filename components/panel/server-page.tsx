@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Archive, CheckCircle2, FolderOpen, Gauge, History, LoaderCircle, MoreHorizontal, Puzzle, Settings2, TerminalSquare, X } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, CheckCircle2, FolderOpen, Gauge, History, LoaderCircle, MoreHorizontal, Puzzle, Settings2, TerminalSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,10 +17,11 @@ import { ConsoleTab } from "./tabs/console-tab";
 import { FilesTab } from "./tabs/files-tab";
 import { OverviewTab } from "./tabs/overview-tab";
 import { PluginsTab } from "./tabs/plugins-tab";
+import { ScheduleTab } from "./tabs/schedule-tab";
 import { SettingsTab } from "./tabs/settings-tab";
 import type { MinecraftServer, ServerTab } from "./types";
 
-const tabIcons = { overview: Gauge, console: TerminalSquare, plugins: Puzzle, backups: Archive, files: FolderOpen, settings: Settings2, activity: History } as const;
+const tabIcons = { overview: Gauge, console: TerminalSquare, plugins: Puzzle, backups: Archive, schedule: CalendarClock, files: FolderOpen, settings: Settings2, activity: History } as const;
 
 function OperationBanner({ server }: { server: MinecraftServer }) {
   const { dismissedResults, dismissResult } = usePanel();
@@ -144,6 +145,7 @@ export function ServerPage({ serverId, tab }: { serverId: string; tab: ServerTab
       {tab === "console" && <ConsoleTab server={server} />}
       {tab === "plugins" && <PluginsTab server={server} />}
       {tab === "backups" && <BackupsTab server={server} />}
+      {tab === "schedule" && <ScheduleTab server={server} />}
       {tab === "files" && <FilesTab server={server} />}
       {tab === "settings" && <SettingsTab server={server} />}
       {tab === "activity" && <ActivityTab server={server} />}

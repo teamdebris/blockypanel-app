@@ -56,6 +56,9 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/servers/[id]/backups/[name]": { GET: "admin", DELETE: "admin" },
   "/api/servers/[id]/files": { GET: "admin", POST: "admin", PATCH: "admin", PUT: "admin", DELETE: "admin" },
   "/api/servers/[id]/reroll": { POST: "admin" },
+  // Anyone can see the schedule; creating, changing, and running tasks is admin-only.
+  "/api/servers/[id]/tasks": { GET: "viewer", POST: "admin" },
+  "/api/servers/[id]/tasks/[taskId]": { PATCH: "admin", DELETE: "admin", POST: "admin" },
   "/api/servers/[id]/modrinth": { GET: "viewer" },
   // Searching and compatibility checks serve installing, which is admin-only (a plugin is code on the server).
   "/api/servers/[id]/modrinth/search": { GET: "admin" },

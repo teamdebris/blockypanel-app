@@ -38,8 +38,8 @@ export type OperationEvent = { id: string; at: string; type: string; level: "inf
 export type ServerFileEntry = { name: string; path: string; type: "file" | "directory"; size: number; modifiedAt: string; editable: boolean };
 export type DetachedWorld = { id: string; name: string; diskUsageBytes: number; hasData: boolean; hasBackups: boolean; canReattach: boolean };
 
-export type ServerTab = "overview" | "console" | "plugins" | "backups" | "files" | "settings" | "activity";
-export const SERVER_TABS: ServerTab[] = ["overview", "console", "plugins", "backups", "files", "settings", "activity"];
+export type ServerTab = "overview" | "console" | "plugins" | "backups" | "schedule" | "files" | "settings" | "activity";
+export const SERVER_TABS: ServerTab[] = ["overview", "console", "plugins", "backups", "schedule", "files", "settings", "activity"];
 
 export type NumericFormKey = "port" | "maxPlayers" | "cpuLimit" | "initialMemoryPercent" | "maxMemoryPercent" | "rollingLogMaxFiles" | "viewDistance" | "simulationDistance" | "stopAnnounceDelaySeconds" | "pauseWhenEmptySeconds" | "spawnProtection";
 export type ServerForm = Omit<ServerConfig, NumericFormKey | "whitelist"> & Record<NumericFormKey, string> & { whitelist: string; eula?: boolean };

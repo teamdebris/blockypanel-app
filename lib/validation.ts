@@ -1,4 +1,5 @@
 import { S3_PROVIDERS, type S3Provider } from "./offsite-core.ts";
+import { isTimeZone } from "./tasks.ts";
 import { isSafeSeed } from "./world.ts";
 import { z } from "zod";
 
@@ -93,6 +94,30 @@ export const fileRenameSchema = z.object({ from: filePathSchema.min(1), to: file
 export const fileWriteSchema = z.object({ path: filePathSchema.min(1), content: z.string().max(2 * 1024 * 1024) });
 
 export { managedPropertyKeys };
+const singleLine = (value: string) => !/[\u0000\r\n]/.test(value);
+const taskScheduleSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("daily"),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 04:00."),
+    days: z.array(z.number().int().min(0).max(6)).max(7).transform((days) => [...new Set(days)].sort()).default([]),
+    timeZone: z.string().max(64).refine(isTimeZone, "Unknown time zone."),
+  }),
+  z.object({ type: z.literal("interval"), hours: z.number().int().min(1, "At least 1 hour.").max(168, "At most 168 hours (a week).") }),
+]);
+export const taskSchema = z.object({
+  kind: z.enum(["restart", "command", "broadcast"]),
+  schedule: taskScheduleSchema,
+  command: z.string().trim().max(512).refine(singleLine, "Commands must be a single line.").transform((value) => value.replace(/^\/+/, "")).optional(),
+  message: z.string().trim().max(200).refine(singleLine, "Messages must be a single line.").optional(),
+  warnMinutes: z.number().int().min(0).max(30).default(5),
+  enabled: z.boolean().default(true),
+}).superRefine((task, context) => {
+  if (task.kind === "command" && !task.command) context.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: "Enter a command." });
+  // RCON reads anything starting with "-" as an option (see assertRconCommand).
+  if (task.kind === "command" && task.command?.startsWith("-")) context.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: "Commands can't start with \"-\"." });
+  if (task.kind === "broadcast" && !task.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "Enter a message." });
+});
+
 export const rerollSchema = z.object({ seed: z.string().trim().max(64).refine(isSafeSeed, "The seed can't contain line breaks.").default("") });
 
 // ---- Offsite backups ----

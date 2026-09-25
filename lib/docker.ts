@@ -19,7 +19,8 @@ import { parsePlayerList, parseStatusCount } from "@/lib/players";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
-import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, recordEvent, recordObservedStatus, removeServerControl } from "@/lib/store";
+import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, markTaskRun, recordEvent, recordObservedStatus, removeServerControl } from "@/lib/store";
+import { describeSchedule, type ScheduledTask, taskAction, warningMinutes } from "@/lib/tasks";
 import { GAME_MODES, JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
 const docker = new Docker();
@@ -1219,6 +1220,86 @@ async function runMaintenance(id: string) {
     } catch (error) {
       await markMaintenance(id, { lastCheckAt: new Date().toISOString() });
       await recordEvent(id, "backup-check", `Backup repository integrity check failed: ${describe(error, "unknown error")}`, "error");
+    }
+  }
+}
+
+function taskLabel(task: ScheduledTask) {
+  return task.kind === "restart" ? "Scheduled restart" : task.kind === "command" ? `Scheduled command "${task.command}"` : "Scheduled message";
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+/**
+ * Runs a task now. `scheduledAt` is the time it's for: a restart warns players in chat until then
+ * (when anyone is online), then restarts. Stopped servers are left alone. Resolves with a result
+ * for the task's history; throws when the server is busy with another operation (try again later).
+ */
+export async function runTask(id: string, task: ScheduledTask, scheduledAt = Date.now()): Promise<{ ok: boolean; message: string }> {
+  if (isDemo()) {
+    const message = task.kind === "restart" ? "Restarted (demo)." : task.kind === "command" ? `Sent "${task.command}" (demo).` : "Message sent (demo).";
+    await recordEvent(id, "task", `${taskLabel(task)}: ${message}`, "success");
+    return { ok: true, message };
+  }
+  const info = await findInfo(id);
+  if (info.State !== "running") return { ok: false, message: "Skipped: the server wasn't running." };
+  if (activeOperation(id)) throw new ConflictError(`${activeOperation(id)!.label} is in progress.`);
+  const container = docker.getContainer(info.Id);
+  if (task.kind === "command" || task.kind === "broadcast") {
+    try {
+      const output = await sendMinecraftCommand(container, task.kind === "command" ? task.command! : `say ${task.message}`);
+      const message = task.kind === "command" ? (output ? `Sent. Reply: ${output.slice(0, 200)}` : "Sent.") : "Message sent.";
+      await recordEvent(id, "task", `${taskLabel(task)}: ${message}`, "info");
+      return { ok: true, message };
+    } catch (error) {
+      const message = describe(error, "The command failed.");
+      await recordEvent(id, "task", `${taskLabel(task)} failed: ${message}`, "warning");
+      return { ok: false, message };
+    }
+  }
+  const players = (await onlinePlayers(info)).online;
+  await startServerOperation(id, "scheduled-restart", "Scheduled restart", async () => {
+    if (players > 0) {
+      for (const minutes of warningMinutes(Math.round((scheduledAt - Date.now()) / 60_000))) {
+        await sleep(scheduledAt - minutes * 60_000 - Date.now());
+        setOperationStep(id, `Restarting in ${minutes} minute${minutes === 1 ? "" : "s"}; players warned`);
+        await sendMinecraftCommand(container, `say The server restarts in ${minutes} minute${minutes === 1 ? "" : "s"}.`).catch(() => undefined);
+      }
+      await sleep(scheduledAt - Date.now());
+    }
+    setOperationStep(id, "Restarting");
+    await container.restart({ t: 30 });
+    setOperationStep(id, "Waiting for Minecraft to start");
+    await waitUntilReady(container);
+    invalidateServerList();
+    await recordEvent(id, "task", `Scheduled restart completed${players ? ` (${players} player${players === 1 ? "" : "s"} warned)` : ""}.`, "success");
+  });
+  return { ok: true, message: players ? `Restarting; ${players} player${players === 1 ? "" : "s"} warned.` : "Restarted." };
+}
+
+/** Called every minute: runs tasks that are due, and skips daily ones the panel missed while down. */
+export async function runScheduledTasks() {
+  const ids = isDemo() ? demoState().servers.map((server) => server.id) : (await managedContainers()).map((item) => item.Labels?.["panel.id"]).filter((id): id is string => Boolean(id && isServerId(id)));
+  for (const id of ids) {
+    for (const task of (await getServerControl(id)).tasks ?? []) {
+      const next = taskAction(task, Date.now());
+      if (next.action === "wait") continue;
+      const scheduledAt = new Date(next.at).toISOString();
+      if (next.action === "skip") {
+        await markTaskRun(id, task.id, scheduledAt, { ok: false, message: "Skipped: the panel wasn't running at the scheduled time." });
+        await recordEvent(id, "task", `${taskLabel(task)} (${describeSchedule(task.schedule)}) was skipped: the panel wasn't running at the scheduled time.`, "warning");
+        continue;
+      }
+      try {
+        const result = await runTask(id, task, next.at);
+        await markTaskRun(id, task.id, scheduledAt, result);
+      } catch (error) {
+        // Busy: another operation holds the server. Retried next minute, within the grace period.
+        if (!(error instanceof ConflictError)) {
+          await markTaskRun(id, task.id, scheduledAt, { ok: false, message: describe(error, "The task failed.") });
+          await recordEvent(id, "task", `${taskLabel(task)} failed: ${describe(error, "unknown error")}`, "error");
+        }
+      }
     }
   }
 }
