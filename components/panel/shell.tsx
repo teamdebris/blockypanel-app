@@ -107,6 +107,18 @@ function Preferences({ onNavigate }: { onNavigate?: () => void }) {
   </div>;
 }
 
+/** "Blocky Panel 0.1.0 · a1b2c3d", so it's clear which build is running. */
+function PanelVersion() {
+  const { system } = usePanel();
+  if (!system?.panel) return null;
+  const { version, commit } = system.panel;
+  return <p className="px-3 text-[11px] text-muted-foreground">
+    Blocky Panel {version} · {commit
+      ? <a href={`https://github.com/teamdebris/blockypanel-app/commit/${commit}`} target="_blank" rel="noreferrer" className="font-mono hover:text-foreground hover:underline" title="The commit this panel was built from">{commit}</a>
+      : <span title="Built from source, not from a published image">local build</span>}
+  </p>;
+}
+
 function ConnectionStatus({ className }: { className?: string }) {
   const { lastUpdatedAt, failures, refreshing, refresh, system } = usePanel();
   const now = useNow(1000);
@@ -206,6 +218,7 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
               <span className={cn("flex items-center gap-1.5 font-medium", dockerDown ? "text-destructive" : "text-foreground")}><span className={cn("size-2 rounded-full", dockerDown ? "bg-destructive" : "bg-success")} />{dockerDown ? "Offline" : system?.dockerVersion ? `Engine ${system.dockerVersion}` : "Connecting…"}</span>
             </div>
             <Preferences />
+            <PanelVersion />
           </div>
         </div>
       </aside>
@@ -225,7 +238,7 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
                 <SheetHeader className="p-0"><SheetTitle className="sr-only">Menu</SheetTitle><SheetDescription className="sr-only">Navigation and preferences</SheetDescription><Brand /></SheetHeader>
                 {!serverId && can.manage && <Button className="mt-3 w-full" onClick={() => { setMenuOpen(false); setCreateOpen(true); }} disabled={dockerDown}><Plus />New server</Button>}
                 <div className="mt-4"><Navigation onNavigate={() => setMenuOpen(false)} /></div>
-                <div className="mt-6 border-t border-border pt-4"><Preferences onNavigate={() => setMenuOpen(false)} /></div>
+                <div className="mt-6 space-y-4 border-t border-border pt-4"><Preferences onNavigate={() => setMenuOpen(false)} /><PanelVersion /></div>
               </SheetContent>
             </Sheet>
           </div>

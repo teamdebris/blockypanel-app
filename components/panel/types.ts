@@ -30,7 +30,7 @@ export type MinecraftServer = ServerConfig & {
   image?: string;
 };
 
-export type SystemState = { dockerAvailable: boolean; dockerVersion?: string; runningCount: number; serverCount: number; offsiteBackups?: boolean; publicHost?: string; error?: string };
+export type SystemState = { dockerAvailable: boolean; dockerVersion?: string; runningCount: number; serverCount: number; offsiteBackups?: boolean; publicHost?: string; error?: string; panel?: { version: string; commit?: string } };
 export type Backup = { name: string; size: number; createdAt: string; kind: string; logicalSize?: number };
 export type BackupPolicy = { enabled: boolean; intervalHours: number; retention: number; lastRunAt?: string };
 export type BackupSchedule = { consecutiveFailures: number; lastAttemptAt?: string; lastFailure?: string; nextRunAt?: string };

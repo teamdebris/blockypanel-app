@@ -25,6 +25,9 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV BLOCKY_STORAGE=/var/lib/blocky
 RUN mkdir -p /var/lib/blocky
+# The commit this image was built from, shown in the panel. Set by CI; empty for local builds.
+ARG BLOCKY_BUILD=""
+ENV BLOCKY_BUILD=${BLOCKY_BUILD}
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
