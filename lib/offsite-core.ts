@@ -101,6 +101,34 @@ export function scrubSecrets(message: string, secrets: string[]) {
   return secrets.filter((secret) => secret.length >= 4).reduce((text, secret) => text.split(secret).join("[hidden]"), message);
 }
 
+/**
+ * A readable explanation of a restic or ssh failure against a destination, or undefined when it
+ * isn't one of the known kinds. The patterns come from real failures seen against S3, SFTP, and
+ * folders (see tests/offsite.test.ts).
+ */
+export function friendlyDestinationError(message: string): { message: string; field?: string } | undefined {
+  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(message)) {
+    return { message: "The server's SSH host key doesn't match the one saved. If it was reinstalled, test the connection again to trust its new key." };
+  }
+  // ssh's login failures: "Permission denied (publickey,password)." and, when a password is
+  // rejected, "Permission denied, please try again." Any other "permission denied" is the server
+  // refusing to let the account write where it was pointed.
+  if (/Permission denied \((publickey|password|keyboard)|Permission denied, please try again|authentication failed|Too many authentication failures|Incorrect password/i.test(message)) {
+    return { message: "The destination refused the login. Check the user name and password or key." };
+  }
+  if (/permission denied|read-only file system/i.test(message)) {
+    return { message: "Signed in, but this account can't write to that folder. Check the folder is right and that the user can write to it.", field: "path" };
+  }
+  if (/Access ?Denied|InvalidAccessKeyId|SignatureDoesNotMatch|signature we calculated|403 Forbidden/i.test(message)) {
+    return { message: "The storage provider refused the keys. Check the access key, secret, and that they can read and write the bucket." };
+  }
+  if (/NoSuchBucket|bucket does not exist/i.test(message)) return { message: "That bucket doesn't exist. Create it at your provider first.", field: "bucket" };
+  if (/Connection refused|No route to host|Could not resolve hostname|no such host|i\/o timeout|Connection timed out/i.test(message)) {
+    return { message: "Couldn't reach the destination. Check the address and port, and that it's reachable from this machine." };
+  }
+  return undefined;
+}
+
 export type OffsiteIndexEntry = { name: string; type: string; version: string; repositoryPassword: string; lastCopyAt: string; removed?: boolean };
 export type OffsiteIndex = { version: 1; panelId: string; updatedAt: string; servers: Record<string, OffsiteIndexEntry> };
 

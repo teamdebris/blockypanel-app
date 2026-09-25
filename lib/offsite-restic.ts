@@ -76,9 +76,16 @@ export async function repositoryExists(runner: Runner, repository: string, passw
   }
 }
 
-// restic before 0.17 exits with 1 for everything, so the messages are checked too.
+// restic before 0.17 exits with 1 for everything, so the messages are checked too. "unable to open
+// config file" alone isn't enough: restic says it for a refused login too ("Stat: Access Denied").
+const ACCESS_PROBLEM = /access denied|forbidden|signature|permission denied|invalidaccesskey|unauthori[sz]ed|authentication/i;
+const MISSING = /no such file|does not exist|not found|nosuchkey|nosuchbucket/i;
+
 export function isNoRepository(error: unknown) {
-  return error instanceof ResticError && (error.code === NO_REPOSITORY || /repository does not exist|unable to open config file/i.test(error.message));
+  if (!(error instanceof ResticError)) return false;
+  if (ACCESS_PROBLEM.test(error.message)) return false;
+  if (error.code === NO_REPOSITORY) return true;
+  return /repository does not exist/i.test(error.message) || (/unable to open config file/i.test(error.message) && MISSING.test(error.message) && !/nosuchbucket/i.test(error.message));
 }
 
 export function isWrongPassword(error: unknown) {

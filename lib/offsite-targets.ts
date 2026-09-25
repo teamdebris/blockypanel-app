@@ -187,9 +187,11 @@ async function sftpRunner(destination: Extract<OffsiteDestination, { kind: "sftp
     command = [...ssh, "-i", keyFile, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "PasswordAuthentication=no"];
   } else {
     if (!destination.password) throw new BadRequestError("Enter the password.", "password");
-    command = ["sshpass", "-e", ...ssh, "-o", "PubkeyAuthentication=no", "-o", "PreferredAuthentications=password,keyboard-interactive"];
+    // No commas anywhere in this command: restic splits its -o values on commas.
+    command = ["sshpass", "-e", ...ssh, "-o", "PubkeyAuthentication=no"];
   }
   command.push(`${destination.user}@${destination.host}`, "-s", "sftp");
+  if (command.some((part) => part.includes(","))) throw new BadRequestError("Blocky's storage folder path can't contain commas for SFTP backups.");
   return directRunner({
     ...localPaths,
     cacheDir: resticCachePath(),

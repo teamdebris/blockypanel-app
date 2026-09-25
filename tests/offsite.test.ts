@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { folderPathProblem, parseIndex, passphraseProblem, repositoryFor, s3Endpoint, scrubSecrets, secretsOf, serializeIndex, type OffsiteDestination } from "../lib/offsite-core.ts";
+import { isNoRepository, isWrongPassword, ResticError } from "../lib/offsite-restic.ts";
+import { folderPathProblem, friendlyDestinationError, parseIndex, passphraseProblem, repositoryFor, s3Endpoint, scrubSecrets, secretsOf, serializeIndex, type OffsiteDestination } from "../lib/offsite-core.ts";
 
 const s3: OffsiteDestination = { kind: "s3", provider: "b2", endpoint: "", region: "us-west-004", bucket: "my-worlds", prefix: "blocky/", accessKeyId: "004abc", secretAccessKey: "K004secret" };
 
@@ -52,4 +53,34 @@ test("the index round-trips and rejects malformed data", () => {
   assert.throws(() => parseIndex("{\"version\": 2}"));
   assert.throws(() => parseIndex("not json"));
   assert.throws(() => parseIndex(JSON.stringify({ ...index, servers: { "../x": index.servers.a1 } })));
+});
+
+test("a refused login is never mistaken for an empty destination", () => {
+  const error = (message: string, code = 1) => new ResticError(message, code);
+  // restic 0.18 against S3 with a wrong secret (seen on a real server).
+  assert.equal(isNoRepository(error("Fatal: unable to open config file: Stat: Access Denied.")), false);
+  assert.equal(isNoRepository(error("Fatal: unable to open config file: Stat: The request signature we calculated does not match the signature you provided.")), false);
+  assert.equal(isNoRepository(error("Fatal: repository does not exist: unable to open config file: Stat: Access Denied.", 10)), false);
+  // Genuinely missing, on current and older restic.
+  assert.equal(isNoRepository(error("Fatal: repository does not exist: unable to open config file: stat /mnt/x/index/config: no such file or directory", 10)), true);
+  assert.equal(isNoRepository(error("Fatal: unable to open config file: stat /tmp/x/destination/index/config: no such file or directory")), true);
+  assert.equal(isNoRepository(error("Fatal: unable to open config file: Stat: The specified key does not exist.")), true);
+  assert.equal(isNoRepository(error("Fatal: unable to open config file: Stat: The specified bucket does not exist. NoSuchBucket")), false);
+  assert.equal(isNoRepository(new Error("The destination didn't answer in time.")), false);
+  assert.equal(isWrongPassword(error("Fatal: wrong password or no key found")), true);
+  assert.equal(isWrongPassword(error("Fatal: wrong password or no key found", 12)), true);
+});
+
+test("destination failures are explained by what actually went wrong", () => {
+  const kind = (message: string) => friendlyDestinationError(message)?.message.split(".")[0];
+  // Exact messages seen on a test server.
+  assert.equal(kind("subprocess sshpass: Permission denied, please try again.\nFatal: unable to open repository at sftp:e2e@host:/upload/x: unable to start the sftp session"), "The destination refused the login");
+  assert.equal(kind("subprocess ssh: e2e@host: Permission denied (publickey,password)."), "The destination refused the login");
+  assert.equal(kind("Fatal: create repository at sftp:e2e@host:/upload/x/index failed: MkdirAll /upload/x/index/locks: permission denied"), "Signed in, but this account can't write to that folder");
+  assert.equal(kind("subprocess sshpass: Host key for [host]:2222 has changed and you have requested strict checking.\nsubprocess sshpass: Host key verification failed."), "The server's SSH host key doesn't match the one saved");
+  assert.equal(kind("Fatal: unable to open config file: Stat: Access Denied."), "The storage provider refused the keys");
+  assert.equal(kind("Stat: The request signature we calculated does not match the signature you provided."), "The storage provider refused the keys");
+  assert.equal(kind("The specified bucket does not exist. NoSuchBucket"), "That bucket doesn't exist");
+  assert.equal(kind("ssh: connect to host nas.local port 22: Connection refused"), "Couldn't reach the destination");
+  assert.equal(friendlyDestinationError("something else entirely"), undefined);
 });

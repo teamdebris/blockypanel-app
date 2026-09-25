@@ -7,7 +7,7 @@ import { adoptRestoredServer, listServers, restoreServerFiles, serverSettingsFor
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
 import { localRepository, writeLocalRepositoryPassword } from "@/lib/incremental-backups";
 import { notify } from "@/lib/notify";
-import { describeDestination, folderPathProblem, type OffsiteDestination, type OffsiteIndex, passphraseProblem } from "@/lib/offsite-core";
+import { describeDestination, folderPathProblem, friendlyDestinationError, type OffsiteDestination, type OffsiteIndex, passphraseProblem } from "@/lib/offsite-core";
 import {
   addKey, copyServer, createLocalFromOffsite, currentKeyId, listWorldSnapshots, pruneRepository, readIndex, readSettingsSnapshot,
   isWrongPassword, removeKey, repositoryExists, restoreWorld, writeIndex, writeSettingsSnapshot,
@@ -33,7 +33,8 @@ const isDemo = () => process.env.BLOCKY_DEMO === "true";
 
 type RestoreItem = { id: string; name: string; state: "waiting" | "restoring" | "done" | "failed"; message?: string };
 type RestoreJob = { startedAt: string; finishedAt?: string; servers: RestoreItem[]; message?: string };
-type Jobs = { copying?: Promise<void>; restore?: RestoreJob };
+/** `configuring` blocks new copies while the destination changes; `again` queues a copy behind a running one. */
+type Jobs = { copying?: Promise<void>; restore?: RestoreJob; configuring?: boolean; again?: boolean };
 const jobs = (globalThis as typeof globalThis & { __blockyOffsite?: Jobs }).__blockyOffsite ??= {};
 
 function describe(error: unknown, fallback = "Unknown error.") {
@@ -104,10 +105,8 @@ function publicDestination(destination: OffsiteDestination) {
 /** A readable error for a failed restic run against the destination. */
 function destinationError(error: unknown) {
   const message = describe(error);
-  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(message)) return new BadRequestError("The server's SSH host key doesn't match the one saved. If it was reinstalled, test the connection again to trust its new key.");
-  if (/Permission denied|authentication failed/i.test(message)) return new BadRequestError("The destination refused the login. Check the user name and password or key.");
-  if (/AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|403 Forbidden/i.test(message)) return new BadRequestError("The storage provider refused the keys. Check the access key, secret, and that they can read and write the bucket.");
-  if (/NoSuchBucket|bucket does not exist/i.test(message)) return new BadRequestError("That bucket doesn't exist. Create it at your provider first.", "bucket");
+  const friendly = friendlyDestinationError(message);
+  if (friendly) return new BadRequestError(friendly.message, friendly.field);
   if (error instanceof BadRequestError) return error;
   return new BadRequestError(`Couldn't use the destination: ${message}`);
 }
@@ -182,6 +181,13 @@ export async function configureOffsite(input: { destination: DestinationInput; p
   const problem = passphraseProblem(input.passphrase);
   if (problem) throw new BadRequestError(problem, "passphrase");
   if (jobs.copying) throw new ConflictError("An offsite copy is running. Try again when it finishes.");
+  if (jobs.configuring) throw new ConflictError("Offsite backups are already being set up. Try again in a moment.");
+  jobs.configuring = true;
+  try { return await configureUnlocked(input); }
+  finally { jobs.configuring = false; }
+}
+
+async function configureUnlocked(input: { destination: DestinationInput; passphrase: string; schedule: OffsiteSchedule; keep: number }) {
   const previous = await offsiteSettings();
   const destination = await completeDestination(input.destination, previous?.destination);
   const indexPassword = newSecret();
@@ -212,6 +218,7 @@ export async function configureOffsite(input: { destination: DestinationInput; p
   await saveOffsiteSettings({ destination, schedule: input.schedule, keep: input.keep, indexPassword, panelKeyId, passphraseKeyId, configuredAt: new Date().toISOString() });
   await resetOffsiteStatus();
   (await accounts()).audit(await currentActor() || "Admin", `Set up offsite backups to ${describeDestination(destination)}`);
+  jobs.configuring = false;
   await startCopy();
   return offsiteOverview();
 }
@@ -252,11 +259,15 @@ export async function disableOffsite() {
 async function copyAll() {
   const settings = await offsiteSettings();
   if (!settings) return;
+  // If the destination changes while this copy runs, its results belong to the old one: drop them.
+  const record = async (change: Parameters<typeof updateOffsiteStatus>[0]) => {
+    if ((await offsiteSettings())?.configuredAt === settings.configuredAt) await updateOffsiteStatus(change);
+  };
   const startedAt = new Date().toISOString();
   const servers = await listServers().catch(() => []);
   if (isDemo()) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    await updateOffsiteStatus((status) => {
+    await record((status) => {
       Object.assign(status, { lastRunAt: startedAt, lastSuccessAt: startedAt, lastError: undefined });
       for (const server of servers) status.servers[server.id] = { lastCopyAt: startedAt };
     });
@@ -269,7 +280,7 @@ async function copyAll() {
     index = await readIndex(target.runner, target.index, settings.indexPassword);
   } catch (error) {
     const message = destinationError(error).message;
-    await updateOffsiteStatus((status) => { status.lastRunAt = startedAt; status.lastError = message; });
+    await record((status) => { status.lastRunAt = startedAt; status.lastError = message; });
     void notify(`Offsite backup failed: ${message}`);
     return;
   }
@@ -301,19 +312,19 @@ async function copyAll() {
       }
       const copiedAt = new Date().toISOString();
       index.servers[server.id] = { name: server.name, type: server.type, version: server.version, repositoryPassword: local.password, lastCopyAt: copiedAt };
-      await updateOffsiteStatus((status) => { status.servers[server.id] = { lastCopyAt: copiedAt, lastPruneAt }; });
+      await record((status) => { status.servers[server.id] = { lastCopyAt: copiedAt, lastPruneAt }; });
       if (previous?.lastError) await recordEvent(server.id, "backup-offsite", "Offsite copies are working again.", "success");
     } catch (error) {
       failures += 1;
       const message = destinationError(error).message;
-      await updateOffsiteStatus((status) => { status.servers[server.id] = { ...status.servers[server.id], lastError: message }; });
+      await record((status) => { status.servers[server.id] = { ...status.servers[server.id], lastError: message }; });
       await recordEvent(server.id, "backup-offsite", `Offsite copy failed: ${message}`, "error");
     }
   }
   for (const [id, entry] of Object.entries(index.servers)) entry.removed = !current.has(id) || undefined;
   let indexError = "";
   await writeIndexNow().catch((error) => { indexError = destinationError(error).message; });
-  await updateOffsiteStatus((status) => {
+  await record((status) => {
     status.lastRunAt = startedAt;
     if (!failures && !indexError) { status.lastSuccessAt = startedAt; status.lastError = undefined; }
     else status.lastError = indexError || `${failures} server${failures === 1 ? "" : "s"} couldn't be copied.`;
@@ -324,9 +335,14 @@ async function copyAll() {
 /** Starts a copy of every server in the background, unless one is already running. */
 export async function startCopy() {
   if (!(await offsiteSettings())) throw new NotFoundError("Offsite backups aren't set up.");
-  if (!jobs.copying) {
+  // A copy asked for while one runs (for example, right after moving to a new destination) runs next.
+  if (jobs.copying) jobs.again = true;
+  else {
     const actor = await currentActor();
-    jobs.copying = runAsActor(actor, copyAll).catch((error) => console.error("Blocky offsite copy failed", error)).finally(() => { jobs.copying = undefined; });
+    jobs.copying = runAsActor(actor, copyAll).catch((error) => console.error("Blocky offsite copy failed", error)).finally(() => {
+      jobs.copying = undefined;
+      if (jobs.again) { jobs.again = false; void startCopy().catch(() => undefined); }
+    });
   }
   return { message: "Copying to the offsite destination." };
 }
@@ -334,7 +350,7 @@ export async function startCopy() {
 /** Called every minute by the scheduler. */
 export async function runOffsiteSchedule() {
   const settings = await offsiteSettings();
-  if (!settings || jobs.copying || jobs.restore && !jobs.restore.finishedAt) return;
+  if (!settings || jobs.copying || jobs.configuring || jobs.restore && !jobs.restore.finishedAt) return;
   const status = await offsiteStatus();
   const now = Date.now();
   const lastRun = status.lastRunAt ? Date.parse(status.lastRunAt) : 0;
