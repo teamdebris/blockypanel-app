@@ -15,7 +15,7 @@ import { offsiteSettings, serverOffsiteStatus } from "@/lib/offsite-settings";
 import { activeOperation, type ActiveOperation, type FinishedOperation, lastOperation, setOperationStep, startServerOperation, withServerLock } from "@/lib/operations";
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isModrinthId, modrinthEnv } from "@/lib/modrinth-core";
-import { parsePlayerList } from "@/lib/players";
+import { parsePlayerList, parseStatusCount } from "@/lib/players";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
@@ -452,8 +452,7 @@ async function onlinePlayers(info: ContainerInfo) {
     // ("Thread RCON Client ... started/shutting down"), so names are fetched over RCON only when someone is
     // online, and at most once a minute.
     const container = docker.getContainer(info.Id);
-    const status = JSON.parse(await timed(execOutput(container, ["mc-monitor", "status", "--json", "--timeout", "3s"]), "the player count")) as { players?: { online?: number } };
-    const online = Number(status.players?.online || 0);
+    const online = parseStatusCount(await timed(execOutput(container, ["mc-monitor", "status", "--json", "--timeout", "3s"]), "the player count"));
     const namesFresh = cached?.namesAt && Date.now() - cached.namesAt < 60_000 && cached.playersOnline === online;
     if (!online) result = { online: 0, names: [] };
     else if (namesFresh) result = { online, names: cached.players };
