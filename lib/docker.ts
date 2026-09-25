@@ -19,7 +19,7 @@ import { parsePlayerList, parseStatusCount } from "@/lib/players";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
-import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, markTaskRun, recordEvent, recordObservedStatus, removeServerControl } from "@/lib/store";
+import { getServerControl, markBackupRun, markMaintenance, markScheduledAttempt, markTaskRun, recordEvent, recordObservedStatus, removeServerControl, serverRenames, setServerName } from "@/lib/store";
 import { describeSchedule, type ScheduledTask, taskAction, warningMinutes } from "@/lib/tasks";
 import { GAME_MODES, JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
@@ -334,7 +334,7 @@ function createOptions(meta: ServerMeta, rconPassword = randomBytes(24).toString
   if (customProperties) env.push(`CUSTOM_SERVER_PROPERTIES=${customProperties}`);
   return {
     Image: image,
-    name: `blocky-${slugify(meta.name)}-${meta.id.slice(0, 6)}`,
+    name: containerName(meta),
     Tty: true,
     OpenStdin: true,
     Labels: labelsFor(meta),
@@ -363,8 +363,38 @@ async function pullImage(image: string) {
  * runs other games) are ignored rather than misread as Minecraft.
  */
 async function managedContainers() {
-  const items = await timed(docker.listContainers({ all: true, filters: { label: [`${MANAGED_LABEL}=true`] } }), "the container list");
-  return items.filter((item) => (item.Labels?.["panel.game"] ?? "minecraft") === "minecraft");
+  const [items, renames] = await Promise.all([
+    timed(docker.listContainers({ all: true, filters: { label: [`${MANAGED_LABEL}=true`] } }), "the container list"),
+    serverRenames().catch(() => ({} as Record<string, { name: string; container: string }>)),
+  ]);
+  return items
+    .filter((item) => (item.Labels?.["panel.game"] ?? "minecraft") === "minecraft")
+    // Renamed since this container was made: the rename wins. A recreated container has its own labels.
+    .map((item) => { const rename = renames[item.Labels?.["panel.id"]]; return rename?.container === item.Id ? { ...item, Labels: { ...item.Labels, "panel.name": rename.name } } : item; });
+}
+
+function containerName(meta: Pick<ServerMeta, "id" | "name">) {
+  return `blocky-${slugify(meta.name)}-${meta.id.slice(0, 6)}`;
+}
+
+/** Whether `next` differs from `current` only in its name, which needs no restart. */
+function onlyNameChanged(current: ServerConfig, next: ServerConfig) {
+  if (current.name === next.name) return false;
+  return (Object.keys(next) as (keyof ServerConfig)[]).every((key) => key === "name" || JSON.stringify(current[key]) === JSON.stringify(next[key]));
+}
+
+/** Renames a server without touching the running game: the panel's record, server.json, and the container's name. */
+async function renameServer(info: ContainerInfo, current: ServerMeta, name: string) {
+  const id = current.id;
+  await withServerLock(id, "settings", "Renaming", async () => {
+    await setServerName(id, name, info.Id);
+    await saveServerMeta({ ...current, name });
+    // Cosmetic (docker ps); works on a running container.
+    await docker.getContainer(info.Id).rename({ name: containerName({ id, name }) }).catch(() => undefined);
+  });
+  invalidateServerList();
+  await recordEvent(id, "settings", `Renamed from "${current.name}" to "${name}".`, "success");
+  return { message: `Renamed to ${name}.`, renamed: true };
 }
 
 async function findInfo(id: string) {
@@ -858,6 +888,12 @@ export async function modrinthServerConfig(id: string) {
 export async function updateServer(id: string, config: ServerConfig) {
   if (isDemo()) {
     const server = demoServer(id);
+    if (onlyNameChanged(server, { ...server, ...config })) {
+      const old = server.name;
+      server.name = config.name;
+      await recordEvent(id, "settings", `Renamed from "${old}" to "${config.name}".`, "success");
+      return { message: `Renamed to ${config.name}.`, renamed: true };
+    }
     return demoOperation(id, "settings", "Applying settings", ["Taking a safety backup", "Recreating the container", "Waiting for Minecraft to start"], async () => {
       Object.assign(server, config, { memoryLimitMb: Math.round(bytesFor(config.memory) / 1024 ** 2), statusMessage: "Ready for players" });
       await recordEvent(id, "settings", "Configuration applied and health check passed.", "success");
@@ -865,6 +901,7 @@ export async function updateServer(id: string, config: ServerConfig) {
   }
   const info = await findInfo(id);
   const current = metaFromLabels(info.Labels);
+  if (onlyNameChanged(current, { ...current, ...config })) return renameServer(info, current, config.name);
   await assertPortAvailable(config.port, id);
   return startServerOperation(id, "settings", "Applying settings", () => replaceServer(info, { ...current, ...config }, "settings"));
 }

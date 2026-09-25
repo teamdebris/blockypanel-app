@@ -42,6 +42,12 @@ type ServerControl = {
   observedStatus?: string;
   observedRestartCount?: number;
   tasks?: ScheduledTask[];
+  /**
+   * A rename after the container was made. Docker labels can't change on a running container, so
+   * it's kept here instead of restarting. It applies only to that container: once the server is
+   * recreated, the new container's labels carry the current name.
+   */
+  rename?: { name: string; container: string };
 };
 
 type ControlState = {
@@ -190,6 +196,17 @@ export async function recordObservedStatus(id: string, status: string, serverNam
     server.observedStatus = status;
     server.observedRestartCount = restartCount;
   });
+}
+
+export async function setServerName(id: string, name: string, container: string) {
+  return mutate((state) => { ensureServer(state, id).rename = { name, container }; });
+}
+
+/** Renames made since each server's container was created, by server ID. */
+export async function serverRenames() {
+  await queue;
+  const state = await readState();
+  return Object.fromEntries(Object.entries(state.servers).flatMap(([id, server]) => server.rename ? [[id, server.rename]] : [])) as Record<string, { name: string; container: string }>;
 }
 
 /** Adds a task, or replaces the one with the same ID. */

@@ -85,6 +85,8 @@ export function SettingsTab({ server }: { server: MinecraftServer }) {
   const changes = edits ? formChanges(baseline, edits.form) : [];
   const dirty = changes.length > 0;
   const changedElsewhere = Boolean(edits && formChanges(edits.base, baseline).length);
+  // Only the name changed: applied instantly, without a restart.
+  const nameOnly = changes.length === 1 && changes[0].key === "name";
   const errors = { ...validateForm(form, servers, server.id), ...serverErrors };
   const hasErrors = Object.keys(errors).length > 0;
   const busy = Boolean(server.operation) || isPending(`${server.id}:settings`);
@@ -115,8 +117,9 @@ export function SettingsTab({ server }: { server: MinecraftServer }) {
     const submitted = { ...form, modrinthProjects: form.modrinthProjects.filter((id) => !dropped.has(id)) };
     await track(`${server.id}:settings`, async () => {
       try {
-        await api(`/api/servers/${server.id}`, { method: "PATCH", body: JSON.stringify(toPayload(submitted)) });
-        toast.success("Applying settings", { description: "Backing up, recreating, and health-checking the server. It rolls back automatically if startup fails." });
+        const result = await api<{ message: string; renamed?: boolean }>(`/api/servers/${server.id}`, { method: "PATCH", body: JSON.stringify(toPayload(submitted)) });
+        if (result.renamed) toast.success(result.message);
+        else toast.success("Applying settings", { description: "Backing up, recreating, and health-checking the server. It rolls back automatically if startup fails." });
         setEdits(null);
       } catch (error) {
         if (error instanceof ApiError && error.field) { setServerErrors({ [error.field]: error.message }); toast.error(error.message); }
@@ -145,13 +148,15 @@ export function SettingsTab({ server }: { server: MinecraftServer }) {
         <div className="flex gap-2"><Button variant="ghost" onClick={() => { setEdits(null); setServerErrors({}); }}>Discard</Button><Button onClick={() => void review()} disabled={hasErrors || busy}>Review and apply</Button></div>
       </div>
     </div>
-    <ConfirmDialog open={reviewing} onOpenChange={setReviewing} title={`Apply ${changes.length} change${changes.length === 1 ? "" : "s"} to ${server.name}?`} confirmLabel="Apply and restart" onConfirm={() => void apply()}>
+    <ConfirmDialog open={reviewing} onOpenChange={setReviewing} title={nameOnly ? `Rename ${server.name}?` : `Apply ${changes.length} change${changes.length === 1 ? "" : "s"} to ${server.name}?`} confirmLabel={nameOnly ? "Rename" : "Apply and restart"} onConfirm={() => void apply()}>
       <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border p-3 text-xs">
         {changes.map((change) => <li key={change.key}><span className="font-medium text-foreground">{change.label}</span>: <span className="line-through">{change.from}</span> → <span className="text-foreground">{change.to}</span></li>)}
       </ul>
       {dropping.length > 0 && <p className="rounded-lg border border-warning/30 bg-warning-soft p-2.5 text-warning">These have no build for {form.type === baseline.type ? "" : `${form.type.charAt(0)}${form.type.slice(1).toLowerCase()} `}{form.version} and will be removed: {dropping.map((item) => item.title).join(", ")}.</p>}
-      <p>The server restarts to apply these, usually taking 1–3 minutes.{server.playersOnline ? ` ${server.playersOnline} player${server.playersOnline === 1 ? " is" : "s are"} online and will be disconnected after a ${server.stopAnnounceDelaySeconds}s warning.` : ""}</p>
-      <p>A safety backup is taken first, and if the server doesn&apos;t start, the previous settings are restored automatically.</p>
+      {nameOnly ? <p>Renaming is instant. The server keeps running and nobody is disconnected.</p> : <>
+        <p>The server restarts to apply these, usually taking 1–3 minutes.{server.playersOnline ? ` ${server.playersOnline} player${server.playersOnline === 1 ? " is" : "s are"} online and will be disconnected after a ${server.stopAnnounceDelaySeconds}s warning.` : ""}</p>
+        <p>A safety backup is taken first, and if the server doesn&apos;t start, the previous settings are restored automatically.</p>
+      </>}
     </ConfirmDialog>
   </div>;
 }
