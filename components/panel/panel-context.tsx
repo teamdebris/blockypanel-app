@@ -140,10 +140,16 @@ export function PanelProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(timer);
   }, [refresh, anyOperation, notificationsEnabled]);
 
-  // Announce background operations and crashes that happen while the panel is open.
+  // Announce background operations and crashes that happen while the panel is open. The first
+  // server list is the baseline (results from before this page load aren't announced), so nothing
+  // is recorded until it has loaded. Entries are kept for servers missing from one poll, so a
+  // server that briefly drops out of the list isn't announced again when it returns.
   useEffect(() => {
+    if (!loaded) return;
     const seen = seenOperations.current;
-    seenOperations.current = new Map(servers.flatMap((server) => server.lastOperation ? [[server.id, server.lastOperation.finishedAt] as const] : []));
+    const next = new Map(seen ?? []);
+    for (const server of servers) if (server.lastOperation) next.set(server.id, server.lastOperation.finishedAt);
+    seenOperations.current = next;
     for (const server of servers) {
       const previous = seenStatus.current.get(server.id);
       seenStatus.current.set(server.id, server.status);
@@ -157,7 +163,7 @@ export function PanelProvider({ children }: { children: React.ReactNode }) {
       else toast.error(`${server.name}: ${finished.label} failed`, { description: finished.message, duration: 15000 });
       notifyBrowser(`${server.name}: ${finished.label} ${finished.ok ? "finished" : "failed"}`, finished.message);
     }
-  }, [servers]);
+  }, [servers, loaded]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

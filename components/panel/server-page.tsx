@@ -36,7 +36,9 @@ function OperationBanner({ server }: { server: MinecraftServer }) {
     </div>;
   }
   const finished = server.lastOperation;
-  if (!finished || dismissedResults.has(finished.finishedAt) || now - new Date(finished.finishedAt).getTime() > 6 * 3_600_000) return null;
+  // Failures stay until dismissed (up to 6 hours); successes were already announced, so they go after 5 minutes.
+  const shownFor = finished?.ok ? 5 * 60_000 : 6 * 3_600_000;
+  if (!finished || dismissedResults.has(finished.finishedAt) || now - new Date(finished.finishedAt).getTime() > shownFor) return null;
   return <div role={finished.ok ? "status" : "alert"} className={cn("flex items-start gap-3 rounded-xl border px-4 py-3", finished.ok ? "border-success/30 bg-success-soft" : "border-destructive/30 bg-danger-soft")}>
     {finished.ok ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />}
     <div className="min-w-0 flex-1"><p className="text-sm font-medium">{finished.ok ? `${finished.label} finished` : `${finished.label} failed`}</p><p className="mt-0.5 text-xs text-muted-foreground">{finished.message}</p></div>
