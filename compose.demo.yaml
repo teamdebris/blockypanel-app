@@ -1,0 +1,39 @@
+# A public demo: fake servers, sample accounts (admin, operator, viewer; password blocky-demo), and
+# nothing real behind it. Unlike compose.yaml, it mounts neither the Docker socket nor any data, so
+# the demo can't reach Docker or the host even if demo mode were somehow turned off. Everything
+# resets when the container restarts.
+#
+#   docker compose -f compose.demo.yaml up -d
+#
+# For HTTPS, add the Caddy overlay: COMPOSE_FILE=compose.demo.yaml:compose.caddy.yaml in .env.
+services:
+  blocky:
+    image: ghcr.io/teamdebris/blockypanel-app:${BLOCKY_VERSION:-latest}
+    container_name: blocky-demo
+    environment:
+      BLOCKY_DEMO: "true"
+      BLOCKY_SCHEDULER: "false"
+      BLOCKY_COOKIE_SECURE: ${BLOCKY_COOKIE_SECURE:-false}
+      BLOCKY_TRUST_PROXY: ${BLOCKY_TRUST_PROXY:-false}
+      BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
+    ports:
+      - "${BLOCKY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+    # A small in-memory scratch space instead of a host folder.
+    tmpfs:
+      - /var/lib/blocky:size=64m,mode=0700
+      - /app/.next/cache:size=64m
+      - /tmp:size=32m
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

@@ -164,7 +164,7 @@ function MobileHeaderStart() {
 }
 
 export function PanelShell({ children }: { children: React.ReactNode }) {
-  const { system, failures, loaded, setCreateOpen, setPaletteOpen, can } = usePanel();
+  const { system, failures, loaded, setCreateOpen, setPaletteOpen, can, me } = usePanel();
   const { pathname, serverId } = useRouteInfo();
   const [menuOpen, setMenuOpen] = useState(false);
   const mobile = useIsMobile();
@@ -231,6 +231,7 @@ export function PanelShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {me?.demo && <div role="note" className="border-b border-border bg-muted/60 px-4 py-2 text-center text-xs text-muted-foreground sm:px-8"><span className="font-medium text-foreground">Demo.</span> The servers here are simulated and nothing runs; changes reset when the demo restarts.</div>}
         {offline && <div role="status" className="flex items-start gap-3 border-b border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning sm:px-8"><WifiOff className="mt-0.5 size-4 shrink-0" /><p><span className="font-semibold">Can&apos;t reach the panel.</span> Showing the last known state; it will update when the connection returns.</p></div>}
         {dockerDown && !offline && <div role="alert" className="flex items-start gap-3 border-b border-destructive/30 bg-danger-soft px-4 py-3 text-sm text-destructive sm:px-8"><CircleAlert className="mt-0.5 size-4 shrink-0" /><div><p className="font-semibold">Docker is not connected</p><p className="mt-0.5">{system?.error || "Start Docker or give the panel access to its socket."} Servers can&apos;t be started or created until it&apos;s back.</p></div></div>}
 
