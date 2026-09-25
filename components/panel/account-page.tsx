@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_DESCRIPTIONS } from "@/lib/roles";
 import { PageHeading, Section } from "./common";
+import { TwoFactorSection } from "./two-factor";
 import { api, ApiError, errorMessage, formatRelative } from "./lib";
 import { useNow, usePanel } from "./panel-context";
 import { RoleBadge } from "./shell";
@@ -91,6 +92,7 @@ export function AccountPage() {
     <PageHeading eyebrow="Access" title="Your account" description={<span className="flex flex-wrap items-center gap-2">Signed in as <span className="font-medium text-foreground">{me.username}</span><RoleBadge role={me.role} /></span>} />
     <Section title="What you can do"><p className="text-sm text-muted-foreground">{ROLE_DESCRIPTIONS[me.role]}{me.role !== "admin" ? " An admin can change your role." : ""}</p></Section>
     {!me.demo && <Section title="Password"><ChangePassword /></Section>}
+    {!me.demo && !me.recovery && <Section title="Two-factor sign-in" description="A code from your phone, on top of your password."><TwoFactorSection /></Section>}
     <Section title="Where you're signed in" description={"Sign out any device you don't recognize, then change your password."}><Sessions /></Section>
   </div>;
 }

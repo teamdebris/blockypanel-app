@@ -33,6 +33,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Incorrect username or password." }, { status: 401 });
     }
     attempt.succeed();
+    // With two-factor on, the password only earns a few minutes to enter a code.
+    if (user.twoFactor) return NextResponse.json({ twoFactor: true, challenge: store.createLoginChallenge(user.id, remember !== false) });
     return await signIn(NextResponse.json({ ok: true }), request, { userId: user.id, persistent: remember !== false });
   } catch (error) { return apiError(error); }
 }

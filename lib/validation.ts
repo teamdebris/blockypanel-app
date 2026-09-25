@@ -87,7 +87,14 @@ export const changePasswordSchema = z.object({ current: z.string().max(256), pas
 const roleSchema = z.enum(["viewer", "operator", "admin"]);
 export const inviteSchema = z.object({ role: roleSchema });
 export const userUpdateSchema = z.object({ role: roleSchema.optional(), disabled: z.boolean().optional() });
-export const userActionSchema = z.object({ action: z.enum(["reset-link", "sign-out"]) });
+export const userActionSchema = z.object({ action: z.enum(["reset-link", "sign-out", "disable-two-factor"]) });
+export const loginCodeSchema = z.object({ challenge: z.string().min(1).max(128), code: z.string().trim().min(1, "Enter the code.").max(32) });
+export const twoFactorSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("start") }),
+  z.object({ action: z.literal("confirm"), code: z.string().trim().min(1, "Enter the code.").max(32) }),
+  z.object({ action: z.literal("recovery-codes"), password: z.string().min(1, "Enter your password.").max(256) }),
+]);
+export const twoFactorOffSchema = z.object({ password: z.string().min(1, "Enter your password.").max(256) });
 export const filePathSchema = z.string().max(1024);
 export const fileDirectorySchema = z.object({ path: filePathSchema.min(1) });
 export const fileRenameSchema = z.object({ from: filePathSchema.min(1), to: filePathSchema.min(1) });

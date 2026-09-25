@@ -30,6 +30,8 @@ export type Access = "public" | Role;
 export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/health": { GET: "public" },
   "/api/auth/login": { POST: "public" },
+  // The second sign-in step; it needs the short-lived challenge from a correct password.
+  "/api/auth/login/code": { POST: "public" },
   // Public so an expired or revoked session can still clear its cookie.
   "/api/auth/logout": { POST: "public" },
   "/api/auth/setup": { GET: "public", POST: "public" },
@@ -37,6 +39,7 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/auth/invite/[token]": { GET: "public", POST: "public" },
   "/api/auth/me": { GET: "viewer" },
   "/api/auth/password": { PUT: "viewer" },
+  "/api/auth/two-factor": { GET: "viewer", POST: "viewer", DELETE: "viewer" },
   "/api/auth/sessions": { GET: "viewer", DELETE: "viewer" },
   "/api/users": { GET: "admin", POST: "admin" },
   "/api/users/[id]": { PATCH: "admin", DELETE: "admin", POST: "admin" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { LifeBuoy, LoaderCircle, LockKeyhole } from "lucide-react";
+import { LifeBuoy, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react";
 import { AuthShell, authFetch, PasswordField, TextField } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,6 +24,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [retryUntil, setRetryUntil] = useState(0);
+  // Set after a correct password on an account with two-factor sign-in.
+  const [challenge, setChallenge] = useState("");
+  const [code, setCode] = useState("");
   const [now, setNow] = useState(0);
 
   useEffect(() => {
@@ -39,6 +42,19 @@ export default function LoginPage() {
     return () => window.clearInterval(timer);
   }, [retryUntil]);
 
+  async function submitCode(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setError("");
+    const result = await authFetch<{ recoveryCodesLeft?: number }>("/api/auth/login/code", { challenge, code });
+    if (!result.ok) {
+      // The sign-in expired or ran out of tries: start again from the password.
+      if (result.status === 410) { setChallenge(""); setCode(""); setPassword(""); }
+      setError(result.error); setBusy(false); return;
+    }
+    // Signing in with a recovery code while few are left: go where new ones are made.
+    if (result.body.recoveryCodesLeft !== undefined && result.body.recoveryCodesLeft <= 3) { window.location.replace("/account"); return; }
+    goNext();
+  }
+
   async function submit(event?: FormEvent, override?: { username: string; password: string }) {
     event?.preventDefault(); setBusy(true); setError("");
     const result = recovery
@@ -49,12 +65,22 @@ export default function LoginPage() {
       setError(result.error); setBusy(false); return;
     }
     if ("setup" in result.body && result.body.setup) { window.location.replace("/setup"); return; }
+    if ("twoFactor" in result.body && result.body.twoFactor) { setChallenge(String((result.body as { challenge?: unknown }).challenge)); setBusy(false); return; }
     goNext();
   }
 
   const waitSeconds = retryUntil ? Math.max(0, Math.ceil((retryUntil - now) / 1000)) : 0;
   const errorText = waitSeconds ? `Too many attempts. Try again in ${waitSeconds >= 60 ? `${Math.ceil(waitSeconds / 60)} min` : `${waitSeconds}s`}.` : error;
   const switchMode = () => { setRecovery(!recovery); setError(""); setPassword(""); };
+
+  if (challenge) return <AuthShell icon={ShieldCheck} title="Enter your code" description="Open your authenticator app and enter the 6-digit code for Blocky Panel. Lost your phone? Enter one of your recovery codes instead."
+    below={<button type="button" onClick={() => { setChallenge(""); setCode(""); setPassword(""); setError(""); }} className="underline-offset-2 hover:text-foreground hover:underline">Back to sign-in</button>}>
+    <form onSubmit={(event) => void submitCode(event)}>
+      <TextField id="code" label="Code" autoComplete="one-time-code" inputMode="numeric" autoFocus value={code} onChange={(event) => setCode(event.target.value)} required maxLength={32} className="font-mono tracking-widest" />
+      {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}
+      <Button className="mt-5 w-full" disabled={busy || !code.trim()}>{busy && <LoaderCircle className="animate-spin" />}Sign in</Button>
+    </form>
+  </AuthShell>;
 
   return <AuthShell icon={recovery ? LifeBuoy : LockKeyhole} title={recovery ? "Recovery sign-in" : "Sign in"}
     description={recovery ? <>Enter <code className="rounded bg-muted px-1 font-mono text-xs">BLOCKY_ADMIN_PASSWORD</code> from the panel&apos;s <code className="rounded bg-muted px-1 font-mono text-xs">.env</code>. You get admin access for one hour, to reset a password or re-enable an account. Every use is logged.</> : "Sign in with your Blocky account."}

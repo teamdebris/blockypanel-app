@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, KeyRound, LogOut, MoreHorizontal, Plus, Trash2, UserCheck, UserX } from "lucide-react";
+import { Check, Copy, KeyRound, LogOut, MoreHorizontal, Plus, ShieldOff, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,7 +16,7 @@ import { api, errorMessage, formatRelative } from "./lib";
 import { useNow, usePanel } from "./panel-context";
 import { RoleBadge } from "./shell";
 
-type UserRow = { id: string; username: string; role: Role; createdAt: number; lastLoginAt: number | null; lastSeenAt: number | null; disabled: boolean; you: boolean };
+type UserRow = { id: string; username: string; role: Role; createdAt: number; lastLoginAt: number | null; lastSeenAt: number | null; disabled: boolean; twoFactor: boolean; you: boolean };
 type InviteRow = { id: string; kind: "invite" | "reset"; role: Role | null; username?: string; createdBy: string; createdAt: number; expiresAt: number };
 type AuditRow = { id: number; at: number; actor: string; message: string };
 type UsersData = { users: UserRow[]; invites: InviteRow[]; audit: AuditRow[] };
@@ -72,7 +72,7 @@ function InviteDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpen
 
 function UserActions({ user, onChanged, onLink }: { user: UserRow; onChanged: () => void; onLink: (link: CreatedLink) => void }) {
   const { track } = usePanel();
-  const [confirm, setConfirm] = useState<"delete" | "disable" | null>(null);
+  const [confirm, setConfirm] = useState<"delete" | "disable" | "two-factor" | null>(null);
   const call = (key: string, work: () => Promise<void>) => track(`user:${user.id}:${key}`, async () => { await work(); onChanged(); });
   async function reset() {
     await call("reset", async () => {
@@ -85,6 +85,7 @@ function UserActions({ user, onChanged, onLink }: { user: UserRow; onChanged: ()
       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${user.username}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onSelect={() => void reset()}><KeyRound />Reset password…</DropdownMenuItem>
+        {user.twoFactor && !user.you && <DropdownMenuItem onSelect={() => setConfirm("two-factor")}><ShieldOff />Turn off two-factor…</DropdownMenuItem>}
         <DropdownMenuItem onSelect={() => void call("signout", async () => { await api(`/api/users/${user.id}`, { method: "POST", body: JSON.stringify({ action: "sign-out" }) }); toast.success(user.you ? "Signed out your other devices." : `${user.username} was signed out everywhere.`); })}><LogOut />Sign out everywhere</DropdownMenuItem>
         {!user.you && <>
           <DropdownMenuSeparator />
@@ -98,6 +99,10 @@ function UserActions({ user, onChanged, onLink }: { user: UserRow; onChanged: ()
     <ConfirmDialog open={confirm === "disable"} onOpenChange={(open) => !open && setConfirm(null)} title={`Disable ${user.username}?`} confirmLabel="Disable account"
       onConfirm={() => void call("disable", async () => { await api(`/api/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ disabled: true }) }); toast.success(`${user.username} is disabled and was signed out.`); })}>
       <p>They&apos;re signed out right away and can&apos;t sign in until you enable the account again. Their name stays in the activity log.</p>
+    </ConfirmDialog>
+    <ConfirmDialog open={confirm === "two-factor"} onOpenChange={(open) => !open && setConfirm(null)} title={`Turn off two-factor sign-in for ${user.username}?`} confirmLabel="Turn off"
+      onConfirm={() => void call("two-factor", async () => { await api(`/api/users/${user.id}`, { method: "POST", body: JSON.stringify({ action: "disable-two-factor" }) }); toast.success(`${user.username} can sign in with just their password now.`); })}>
+      <p>For when they&apos;ve lost their phone and their recovery codes. Make sure it&apos;s really them asking. They can turn it back on from their account page.</p>
     </ConfirmDialog>
     <ConfirmDialog open={confirm === "delete"} onOpenChange={(open) => !open && setConfirm(null)} title={`Delete ${user.username}?`} confirmLabel="Delete account" destructive
       onConfirm={() => void call("delete", async () => { await api(`/api/users/${user.id}`, { method: "DELETE" }); toast.success(`${user.username} was deleted.`); })}>
@@ -147,7 +152,7 @@ export function UsersPage() {
       {!data ? <Skeleton className="h-32" /> : <ul className="-mx-4 divide-y divide-border sm:-mx-5">
         {data.users.map((user) => <li key={user.id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
           <div className="min-w-0 flex-1">
-            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">{user.username}{user.you && <span className="text-xs font-normal text-muted-foreground">(you)</span>}{user.disabled && <span className="rounded-full border border-destructive/40 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">Disabled</span>}</p>
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">{user.username}{user.you && <span className="text-xs font-normal text-muted-foreground">(you)</span>}{user.disabled && <span className="rounded-full border border-destructive/40 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">Disabled</span>}{user.twoFactor && <span className="rounded-full border border-success/40 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-success" title="Two-factor sign-in is on">2FA</span>}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{user.lastSeenAt ? `Active ${formatRelative(user.lastSeenAt, now)}` : user.lastLoginAt ? `Signed in ${formatRelative(user.lastLoginAt, now)}` : "Never signed in"} · joined {formatRelative(user.createdAt, now)}</p>
           </div>
           <RoleSelect user={user} onChanged={() => void load()} />

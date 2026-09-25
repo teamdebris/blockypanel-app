@@ -10,7 +10,11 @@ A Next.js (App Router) app that manages Minecraft servers as Docker containers, 
 | `lib/incremental-backups.ts` | restic: snapshots, restores, downloads (`restic dump`), retention, integrity checks. |
 | `lib/offsite.ts` | Offsite backups: setup, copying, passphrase changes, disaster recovery. Settings live in `panel.db` (`lib/offsite-settings.ts`). |
 | `lib/offsite-core.ts`, `lib/offsite-restic.ts`, `lib/offsite-targets.ts` | Destinations and the layout at them (an `index/` repository holding each server's repository password, opened by the panel's key or the passphrase; `servers/<id>/` per server), restic operations (tested against real restic), and where restic runs (in the panel, or a helper container for a folder on the host). |
-| `lib/files.ts` | The file manager, confined to each server's `data/` folder. Never follows symlinks. |
+| `lib/files.ts` | The file manager, confined to each server's `data/` folder. Never follows symlinks. Also unpacks archives in place. |
+| `lib/archive.ts` | A strict .zip/.tar/.tar.gz reader and extractor (no dependencies, tested with hostile archives). |
+| `lib/world-import.ts` | Replacing a world from an uploaded archive, through `changeServerFiles` in `lib/docker.ts` (safety backup, stop, change, start, roll back on failure). |
+| `lib/tasks.ts` | Scheduled tasks: when each runs next (time zones and daylight saving), missed runs, restart warnings. Run by `runScheduledTasks` in `lib/docker.ts`; stored per server in the control state. |
+| `lib/totp.ts` | Two-factor codes (RFC 6238) and recovery codes. The sign-in challenge and codes live in `lib/account-store.ts`. |
 | `lib/modrinth-core.ts`, `lib/modrinth.ts` | Plugin and mod search, and identifying installed jars by hash. The image does the installing (`MODRINTH_PROJECTS`). |
 | `lib/world.ts` | Pure helpers for re-rolling a world (folder names, the seed line). |
 | `lib/account-store.ts` | Users, invites, reset links, sessions, and the account audit log in SQLite (`node:sqlite`). No Next.js imports, so tests run it on `:memory:`. |

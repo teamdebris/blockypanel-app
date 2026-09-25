@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { hashPassword, hashToken, newToken, PASSWORD_MAX, PASSWORD_MIN, unknownUserHash, verifyPassword } from "./passwords.ts";
 import { isRole, type Role } from "./roles.ts";
+import { newRecoveryCodes, newTotpSecret, normalizeRecoveryCode, verifyTotp } from "./totp.ts";
 
 /**
  * Users, invites, sessions, and the account audit log, in SQLite. Every method is synchronous
@@ -15,7 +16,7 @@ export class AccountError extends Error {
   constructor(status: number, message: string, field?: string) { super(message); this.name = "AccountError"; this.status = status; this.field = field; }
 }
 
-export type User = { id: string; username: string; role: Role; createdAt: number; lastLoginAt: number | null; lastSeenAt: number | null; disabled: boolean };
+export type User = { id: string; username: string; role: Role; createdAt: number; lastLoginAt: number | null; lastSeenAt: number | null; disabled: boolean; twoFactor: boolean };
 export type Session = { id: string; userId: string | null; recovery: boolean; persistent: boolean; createdAt: number; lastSeenAt: number; expiresAt: number; userAgent: string; ip: string };
 type Invite = { id: string; kind: "invite" | "reset"; role: Role | null; userId: string | null; username?: string; createdBy: string; createdAt: number; expiresAt: number };
 type AuditEntry = { id: number; at: number; actor: string; message: string };
@@ -23,6 +24,9 @@ type AuditEntry = { id: number; at: number; actor: string; message: string };
 const HOUR = 60 * 60 * 1000;
 export const SESSION_TTL = { persistent: 14 * 24 * HOUR, browser: 12 * HOUR, recovery: HOUR };
 export const INVITE_TTL = 24 * HOUR;
+/** Time to enter the code after a correct password, and wrong codes allowed in that time. */
+export const CHALLENGE_TTL = 5 * 60 * 1000;
+export const CHALLENGE_ATTEMPTS = 5;
 // last_seen_at is written at most this often, so polling doesn't turn every request into a write.
 const TOUCH_INTERVAL = 60 * 1000;
 const USERNAME = /^[a-zA-Z0-9_.-]{3,32}$/;
@@ -30,7 +34,7 @@ const USERNAME = /^[a-zA-Z0-9_.-]{3,32}$/;
 type Row = Record<string, unknown>;
 
 function toUser(row: Row): User {
-  return { id: String(row.id), username: String(row.username), role: row.role as Role, createdAt: Number(row.created_at), lastLoginAt: row.last_login_at == null ? null : Number(row.last_login_at), lastSeenAt: row.last_seen_at == null ? null : Number(row.last_seen_at), disabled: Boolean(row.disabled) };
+  return { id: String(row.id), username: String(row.username), role: row.role as Role, createdAt: Number(row.created_at), lastLoginAt: row.last_login_at == null ? null : Number(row.last_login_at), lastSeenAt: row.last_seen_at == null ? null : Number(row.last_seen_at), disabled: Boolean(row.disabled), twoFactor: Boolean(row.totp_secret) };
 }
 
 function toSession(row: Row): Session {
@@ -109,6 +113,27 @@ export class AccountStore {
     // Databases created before recovery sessions were tied to the recovery password.
     const columns = db.prepare("PRAGMA table_info(sessions)").all().map((column) => String(column.name));
     if (!columns.includes("recovery_key")) db.exec("ALTER TABLE sessions ADD COLUMN recovery_key TEXT");
+    // Two-factor sign-in, added later: the active secret, one being set up, and the last code's step.
+    const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => String(column.name));
+    for (const column of ["totp_secret TEXT", "totp_pending TEXT", "totp_last_step INTEGER"]) {
+      if (!userColumns.includes(column.split(" ")[0])) db.exec(`ALTER TABLE users ADD COLUMN ${column}`);
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS recovery_codes (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        used_at INTEGER,
+        PRIMARY KEY (user_id, code_hash)
+      );
+      CREATE TABLE IF NOT EXISTS login_challenges (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        persistent INTEGER NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER NOT NULL
+      );
+    `);
   }
 
   private transaction<T>(work: () => T): T {
@@ -206,6 +231,13 @@ export class AccountStore {
     });
   }
 
+/** Confirms a signed-in user's password before a sensitive change (turning two-factor off, new codes). */
+  async checkPassword(userId: string, password: string) {
+    const row = this.db.prepare("SELECT password_hash FROM users WHERE id = ?").get(userId);
+    if (!row) throw new AccountError(404, "User not found.");
+    if (!(await verifyPassword(password, String(row.password_hash)))) throw new AccountError(400, "Your password is incorrect.", "password");
+  }
+
   async changePassword(userId: string, current: string, next: string, keepSessionId?: string) {
     const row = this.db.prepare("SELECT password_hash FROM users WHERE id = ?").get(userId);
     if (!row) throw new AccountError(404, "User not found.");
@@ -216,6 +248,108 @@ export class AccountStore {
       this.db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
       this.db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").run(userId, keepSessionId || "");
     });
+  }
+
+  // ---- Two-factor sign-in (authenticator app codes) ----
+
+  /** Starts setup: a new secret waits for a first correct code before it's turned on. */
+  beginTwoFactor(userId: string) {
+    const row = this.db.prepare("SELECT username, totp_secret FROM users WHERE id = ?").get(userId);
+    if (!row) throw new AccountError(404, "User not found.");
+    if (row.totp_secret) throw new AccountError(409, "Two-factor sign-in is already on. Turn it off first to set up a new device.");
+    const secret = newTotpSecret();
+    this.db.prepare("UPDATE users SET totp_pending = ? WHERE id = ?").run(secret, userId);
+    return { secret, username: String(row.username) };
+  }
+
+  /** Turns two-factor sign-in on once the app shows a correct code, and returns fresh recovery codes. */
+  confirmTwoFactor(userId: string, code: string) {
+    const row = this.db.prepare("SELECT totp_pending FROM users WHERE id = ?").get(userId);
+    if (!row?.totp_pending) throw new AccountError(409, "Start setting up two-factor sign-in first.");
+    const step = verifyTotp(String(row.totp_pending), code, this.now());
+    if (step === null) throw new AccountError(400, "That code isn't right. Check the time on your phone is set automatically, and enter the newest code.", "code");
+    return this.transaction(() => {
+      this.db.prepare("UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ? WHERE id = ?").run(step, userId);
+      return this.replaceRecoveryCodes(userId);
+    });
+  }
+
+  disableTwoFactor(userId: string) {
+    if (!this.getUser(userId)) throw new AccountError(404, "User not found.");
+    this.transaction(() => {
+      this.db.prepare("UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_last_step = NULL WHERE id = ?").run(userId);
+      this.db.prepare("DELETE FROM recovery_codes WHERE user_id = ?").run(userId);
+      this.db.prepare("DELETE FROM login_challenges WHERE user_id = ?").run(userId);
+    });
+  }
+
+  /** New recovery codes; the old ones stop working. */
+  regenerateRecoveryCodes(userId: string) {
+    if (!this.getUser(userId)?.twoFactor) throw new AccountError(409, "Two-factor sign-in isn't on.");
+    return this.transaction(() => this.replaceRecoveryCodes(userId));
+  }
+
+  recoveryCodesLeft(userId: string) {
+    return Number((this.db.prepare("SELECT COUNT(*) AS n FROM recovery_codes WHERE user_id = ? AND used_at IS NULL").get(userId) as { n: number }).n);
+  }
+
+  private replaceRecoveryCodes(userId: string) {
+    const codes = newRecoveryCodes();
+    this.db.prepare("DELETE FROM recovery_codes WHERE user_id = ?").run(userId);
+    const insert = this.db.prepare("INSERT INTO recovery_codes (user_id, code_hash) VALUES (?, ?)");
+    for (const code of codes) insert.run(userId, hashToken(code));
+    return codes;
+  }
+
+  /** After a correct password for a two-factor account: a short-lived token for the code step. */
+  createLoginChallenge(userId: string, persistent: boolean) {
+    const token = newToken();
+    this.db.prepare("DELETE FROM login_challenges WHERE expires_at <= ?").run(this.now());
+    this.db.prepare("INSERT INTO login_challenges (id, token_hash, user_id, persistent, expires_at) VALUES (?, ?, ?, ?, ?)").run(randomUUID(), hashToken(token), userId, persistent ? 1 : 0, this.now() + CHALLENGE_TTL);
+    return token;
+  }
+
+  /**
+   * Checks the code for a sign-in in progress: an authenticator code (never the same one twice) or
+   * an unused recovery code. The challenge is used up on success, or after too many wrong codes.
+   */
+  completeLoginChallenge(token: string, code: string) {
+    // Failures are returned, not thrown, inside the transaction: throwing would roll back the
+    // attempt count (and the deletion of a spent challenge) along with everything else.
+    const outcome = this.transaction((): { error: AccountError } | { user: User; persistent: boolean; usedRecoveryCode: boolean; recoveryCodesLeft: number } => {
+      const challenge = this.db.prepare("SELECT * FROM login_challenges WHERE token_hash = ?").get(hashToken(token));
+      if (!challenge || Number(challenge.expires_at) <= this.now()) {
+        if (challenge) this.db.prepare("DELETE FROM login_challenges WHERE id = ?").run(String(challenge.id));
+        return { error: new AccountError(410, "That sign-in timed out. Enter your password again.") };
+      }
+      const userId = String(challenge.user_id);
+      const row = this.db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+      if (!row || row.disabled || !row.totp_secret) {
+        this.db.prepare("DELETE FROM login_challenges WHERE id = ?").run(String(challenge.id));
+        return { error: new AccountError(410, "That sign-in is no longer valid. Enter your password again.") };
+      }
+      let usedRecoveryCode = false;
+      const step = verifyTotp(String(row.totp_secret), code, this.now(), row.totp_last_step == null ? -1 : Number(row.totp_last_step));
+      if (step !== null) this.db.prepare("UPDATE users SET totp_last_step = ? WHERE id = ?").run(step, userId);
+      else {
+        const recovery = normalizeRecoveryCode(code);
+        const used = recovery ? this.db.prepare("UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL").run(this.now(), userId, hashToken(recovery)) : undefined;
+        usedRecoveryCode = Boolean(used?.changes);
+      }
+      if (step === null && !usedRecoveryCode) {
+        const attempts = Number(challenge.attempts) + 1;
+        if (attempts >= CHALLENGE_ATTEMPTS) {
+          this.db.prepare("DELETE FROM login_challenges WHERE id = ?").run(String(challenge.id));
+          return { error: new AccountError(410, "Too many wrong codes. Enter your password again.") };
+        }
+        this.db.prepare("UPDATE login_challenges SET attempts = ? WHERE id = ?").run(attempts, String(challenge.id));
+        return { error: new AccountError(401, `That code isn't right. ${CHALLENGE_ATTEMPTS - attempts} tr${CHALLENGE_ATTEMPTS - attempts === 1 ? "y" : "ies"} left.`, "code") };
+      }
+      this.db.prepare("DELETE FROM login_challenges WHERE id = ?").run(String(challenge.id));
+      return { user: toUser(row), persistent: Boolean(challenge.persistent), usedRecoveryCode, recoveryCodesLeft: this.recoveryCodesLeft(userId) };
+    });
+    if ("error" in outcome) throw outcome.error;
+    return outcome;
   }
 
   // ---- Sessions ----

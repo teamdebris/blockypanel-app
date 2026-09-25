@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { AccountError, AccountStore, INVITE_TTL, SESSION_TTL } from "../lib/account-store.ts";
 import { hashPassword, verifyPassword } from "../lib/passwords.ts";
 import { API_ACCESS, apiAccess, pageAccess, roleAtLeast } from "../lib/roles.ts";
+import { stepAt, totpCode } from "../lib/totp.ts";
 
 function store() {
   let now = 1_700_000_000_000;
@@ -188,4 +189,50 @@ test("panel settings store JSON values and can be removed", () => {
   assert.deepEqual(accounts.getSetting("offsite"), { keep: 30 });
   accounts.setSetting("offsite", undefined);
   assert.equal(accounts.getSetting("offsite"), undefined);
+});
+
+test("two-factor sign-in: setup, codes, replay protection, recovery codes, and the attempt limit", async () => {
+  let now = Date.parse("2026-09-25T12:00:00Z");
+  const clock = { advance: (ms: number) => { now += ms; } };
+  const accounts = new AccountStore(new DatabaseSync(":memory:"), () => now);
+  const user = await accounts.createUser("steve", "a-long-password-1", "operator");
+  const { secret } = accounts.beginTwoFactor(user.id);
+  const code = () => totpCode(secret, stepAt(now));
+  await rejects(() => accounts.confirmTwoFactor(user.id, "000000"), 400);
+  const recovery = accounts.confirmTwoFactor(user.id, code());
+  assert.equal(recovery.length, 10);
+  assert.equal(accounts.getUser(user.id)?.twoFactor, true);
+  await rejects(() => accounts.beginTwoFactor(user.id), 409);
+
+  // The code used to confirm setup can't be reused to sign in.
+  let challenge = accounts.createLoginChallenge(user.id, true);
+  await rejects(() => accounts.completeLoginChallenge(challenge, code()), 401);
+  clock.advance(30_000);
+  const signedIn = accounts.completeLoginChallenge(challenge, code());
+  assert.equal(signedIn.user.id, user.id);
+  assert.equal(signedIn.persistent, true);
+  await rejects(() => accounts.completeLoginChallenge(challenge, code()), 410); // spent
+
+  // Recovery codes work once each.
+  challenge = accounts.createLoginChallenge(user.id, false);
+  assert.equal(accounts.completeLoginChallenge(challenge, recovery[0].toUpperCase()).usedRecoveryCode, true);
+  challenge = accounts.createLoginChallenge(user.id, false);
+  await rejects(() => accounts.completeLoginChallenge(challenge, recovery[0]), 401);
+  assert.equal(accounts.recoveryCodesLeft(user.id), 9);
+
+  // Five wrong codes end the sign-in attempt (the count survives each failed request).
+  challenge = accounts.createLoginChallenge(user.id, false);
+  for (let attempt = 1; attempt < 5; attempt += 1) await rejects(() => accounts.completeLoginChallenge(challenge, "000000"), 401);
+  await rejects(() => accounts.completeLoginChallenge(challenge, "000000"), 410);
+  clock.advance(30_000);
+  await rejects(() => accounts.completeLoginChallenge(challenge, code()), 410);
+
+  // Challenges expire.
+  challenge = accounts.createLoginChallenge(user.id, false);
+  clock.advance(5 * 60_000 + 1);
+  await rejects(() => accounts.completeLoginChallenge(challenge, code()), 410);
+
+  accounts.disableTwoFactor(user.id);
+  assert.equal(accounts.getUser(user.id)?.twoFactor, false);
+  assert.equal(accounts.recoveryCodesLeft(user.id), 0);
 });

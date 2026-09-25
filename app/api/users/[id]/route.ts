@@ -35,12 +35,20 @@ export async function PATCH(request: Request, context: Context) {
   } catch (error) { return apiError(error); }
 }
 
-/** { action: "reset-link" } makes a one-time password-reset link; "sign-out" ends all their sessions. */
+/**
+ * { action: "reset-link" } makes a one-time password-reset link; "sign-out" ends all their sessions;
+ * "disable-two-factor" turns off their two-factor sign-in (for a lost phone).
+ */
 export async function POST(request: Request, context: Context) {
   try {
     const viewer = await requireViewer("admin");
     const { action } = userActionSchema.parse(await request.json());
     const { store, user } = await target(context);
+    if (action === "disable-two-factor") {
+      store.disableTwoFactor(user.id);
+      store.audit(viewer.username, `Turned off two-factor sign-in for ${user.username}`);
+      return NextResponse.json({ ok: true });
+    }
     if (action === "sign-out") {
       store.deleteUserSessions(user.id, user.id === viewer.userId ? viewer.sessionId : undefined);
       store.audit(viewer.username, `Signed ${user.username} out everywhere`);

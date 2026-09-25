@@ -10,6 +10,8 @@ A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/min
 - Search Modrinth and install plugins (Paper, Purpur) or mods (Fabric, Quilt, Forge, NeoForge) with a click; the image downloads matching versions and required dependencies on start and updates them on every restart
 - Choose the Java runtime per server, and cap memory and CPU per container
 - Edit version, memory, port, difficulty, player limit, whitelist, seed, MOTD, and custom properties
+- Gameplay controls for game mode, PvP, hardcore, flight, command blocks, online mode, and spawn protection
+- Scheduled tasks: daily restarts with countdown warnings in chat, console commands, and chat messages, at a time of day (in your time zone) or every few hours
 - Tune heap percentages, view and simulation distance, log retention, shutdown warnings, idle pause, and modern JVM flags per server
 - Start, stop, restart, inspect, and remove managed containers; reattach or delete the world data a removed server left behind
 - Re-roll a Minecraft world: delete the overworld, Nether, and End and start fresh with a random or chosen seed, keeping plugins, mods, and settings
@@ -17,12 +19,14 @@ A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/min
 - Online player list with kick, op, and whitelist actions; a copyable connect address for each server (set `BLOCKY_PUBLIC_HOST` to your domain)
 - Create, download, restore, and delete incremental, deduplicated backups
 - Scheduled backups with per-kind retention, retry backoff, weekly integrity checks, and offsite copies set up from the panel
-- Browse, upload, edit, download, create, and delete files within each server's data directory
+- Browse, upload, edit, download, create, and delete files within each server's data directory, and unpack .zip, .tar, and .tar.gz archives
+- Import a world from a .zip (singleplayer or another host) with a safety backup and automatic rollback
 - Back up before updates and settings changes, verify health, and roll back automatically on failure
 - Long operations (provisioning, updates, restores, backups) run in the background with live progress, and only one runs per server at a time
 - Live CPU, memory, disk, player-count, health, and startup-failure visibility
 - Persistent operation and restart history, with optional Discord/Slack webhook alerts on failures
 - User accounts with Admin, Operator, and Viewer roles, invite links, password-reset links, and a sessions list you can sign out of
+- Two-factor sign-in with any authenticator app, plus single-use recovery codes
 - Database-backed sessions (sign someone out and it takes effect immediately), login throttling, and cross-origin request protection
 - Works on phones (bottom tab bar, full-height console), with dark mode, a Ctrl/Cmd+K command palette, and optional browser notifications
 - Interactive demo mode that never touches Docker
@@ -126,9 +130,20 @@ For extra protection against password guessing, you can rate-limit `/api/auth/` 
 - **Invites:** an admin picks a role and gets a one-time link (valid 24 hours). The person chooses their own username and password. Password resets work the same way, so admins never see anyone's password.
 - **Operators get the full console**, including Minecraft's `op`. Only give it to people you'd trust with the server console.
 - **Files are admin-only**, because `server.properties` holds the RCON password and downloads contain whole worlds.
+- **Two-factor sign-in:** anyone can turn it on under Your account: scan the QR code with an authenticator app (Google Authenticator, 1Password, Authy, ...), then keep the ten recovery codes somewhere safe. After a correct password, sign-in asks for the code, with five tries. If someone loses their phone and their codes, an admin can turn it off for them from Users.
 - **Recovery:** if you forget your password, use "Locked out? Use recovery sign-in" on the login page with `BLOCKY_ADMIN_PASSWORD`. It gives a one-hour admin session and is recorded in the account activity log. Leave `BLOCKY_ADMIN_PASSWORD` empty to turn recovery off.
 - Accounts live in `panel/panel.db` (SQLite). It isn't part of world backups; if it's lost, use recovery sign-in to set up again and re-invite people.
 - The last admin can't be demoted, disabled, or deleted, and nobody can change their own role.
+
+## Scheduled tasks
+
+Each server's **Schedule** tab runs things on their own: a **restart** (players online get countdown messages in chat first, 5 minutes by default), a **console command**, or a **chat message**. Tasks run daily at a time, on every day or chosen weekdays, in your browser's time zone and correct across daylight-saving changes, or every few hours. Stopped servers are left alone. A daily run the panel missed while it was down is skipped rather than run hours late. Everyone can see the schedule; admins manage it.
+
+## Importing a world
+
+Upload the world's `.zip` (or `.tar`, `.tar.gz`) in **Files**, then choose **Use as the world** from its menu. The folder with `level.dat` inside the archive becomes the server's world: from singleplayer (Nether and End included) or from another host. It's unpacked while the server keeps running, then a safety backup is taken, the server restarts with the new world, and if it doesn't start the old world is put back. Plugins, mods, and settings are kept. **Extract here** unpacks any archive in place, for plugin configs and the like.
+
+Archives are unpacked by the panel itself, strictly: nothing outside the folder, no symlinks, size and entry limits, checksum and free-space checks. Uploads can be up to 4 GB; behind nginx, raise `client_max_body_size` to match.
 
 ## Plugins and mods
 
