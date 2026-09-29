@@ -2,6 +2,8 @@
 
 A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/minecraft-server`](https://github.com/itzg/docker-minecraft-server). Accounts with roles, one-click plugins and mods from Modrinth, incremental backups, and a live console, set up with one Compose file.
 
+Created with the help of agentic tools.
+
 ![Blocky dashboard](public/screenshots/dashboard.png)
 
 ## Features
@@ -29,7 +31,6 @@ A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/min
 - Two-factor sign-in with any authenticator app, plus single-use recovery codes
 - Database-backed sessions (sign someone out and it takes effect immediately), login throttling, and cross-origin request protection
 - Works on phones (bottom tab bar, full-height console), with dark mode, a Ctrl/Cmd+K command palette, and optional browser notifications
-- Interactive demo mode that never touches Docker
 
 ## Run with Docker Compose
 
@@ -173,19 +174,6 @@ Then choose a **backup passphrase**. Everything is encrypted before it leaves th
 
 The passphrase can't be recovered: keep it in a password manager. It can be changed at any time (the old one stops working). For cloud storage, turn on object versioning or object lock at the provider, so even someone who takes over the panel can't erase older copies.
 
-## Public demo
-
-To let people try the panel without giving them anything real, run the demo Compose file instead of `compose.yaml`:
-
-```sh
-sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blockypanel-app/main/compose.demo.yaml
-sudo docker compose -f compose.demo.yaml up -d
-```
-
-It shows simulated servers and signs in with sample accounts (`admin`, `operator`, `viewer`, password `blocky-demo`). It doesn't mount the Docker socket or any of your data, runs read-only with a memory cap, and resets whenever the container restarts. For HTTPS, set `COMPOSE_FILE=compose.demo.yaml:compose.caddy.yaml` and `BLOCKY_DOMAIN` in `.env`. Don't run it on a machine that also runs your real panel on port 3000.
-
-(`BLOCKY_DEMO=true` with the normal `compose.yaml` also turns on demo mode, for a quick look, but the socket and your data folder stay mounted.)
-
 ## Alerts
 
 Set `BLOCKY_WEBHOOK_URL` to a Discord webhook (or any endpoint accepting `{"content": ..., "text": ...}`) to be notified when a scheduled backup fails, a server crashes, an operation fails, or a repository check fails.
@@ -233,15 +221,6 @@ npm run dev:lan
 ```
 
 On Windows, Dockerode automatically connects to Docker Desktop's named pipe. On Linux and macOS, it uses the standard Docker socket.
-
-To explore the interface without Docker:
-
-```powershell
-$env:BLOCKY_DEMO='true'
-npm run dev
-```
-
-The demo state is in memory and resets when the development server restarts.
 
 ```sh
 npm run dev      # local development (localhost only)
