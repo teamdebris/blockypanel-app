@@ -33,9 +33,12 @@ test("tasks run on time, restarts start early to warn, and missed daily runs are
   assert.deepEqual(taskAction(task, at + MISSED_GRACE_MS + 1), { action: "skip", at });
   assert.deepEqual(taskAction({ ...task, lastRunAt: iso(at) }, at + 60_000), { action: "wait" });
   assert.deepEqual(taskAction({ ...task, enabled: false }, at), { action: "wait" });
-  // Interval tasks catch up instead of skipping.
+  // An overdue interval task runs once for its most recent occurrence.
   const interval: ScheduledTask = { ...task, kind: "broadcast", message: "hi", schedule: { type: "interval", hours: 2 } };
-  assert.equal(taskAction(interval, Date.parse("2026-09-25T09:00:00Z")).action, "run");
+  const now = Date.parse("2026-09-25T09:00:00Z");
+  const latest = Date.parse("2026-09-25T08:00:00Z");
+  assert.deepEqual(taskAction(interval, now), { action: "run", at: latest });
+  assert.deepEqual(taskAction({ ...interval, lastRunAt: iso(latest) }, now), { action: "wait" });
 });
 
 test("schedules read naturally, and restart warnings count down", () => {

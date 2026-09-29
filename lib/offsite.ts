@@ -218,8 +218,7 @@ async function configureUnlocked(input: { destination: DestinationInput; passphr
   await saveOffsiteSettings({ destination, schedule: input.schedule, keep: input.keep, indexPassword, panelKeyId, passphraseKeyId, configuredAt: new Date().toISOString() });
   await resetOffsiteStatus();
   (await accounts()).audit(await currentActor() || "Admin", `Set up offsite backups to ${describeDestination(destination)}`);
-  jobs.configuring = false;
-  await startCopy();
+  queueCopy();
   return offsiteOverview();
 }
 
@@ -264,7 +263,14 @@ async function copyAll() {
     if ((await offsiteSettings())?.configuredAt === settings.configuredAt) await updateOffsiteStatus(change);
   };
   const startedAt = new Date().toISOString();
-  const servers = await listServers().catch(() => []);
+  let servers: Awaited<ReturnType<typeof listServers>>;
+  try { servers = await listServers(); }
+  catch (error) {
+    const message = `Could not list servers for the offsite copy: ${describe(error)}`;
+    await record((status) => { status.lastRunAt = startedAt; status.lastError = message; });
+    void notify(`Offsite backup failed: ${message}`);
+    return;
+  }
   if (isDemo()) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await record((status) => {
@@ -332,19 +338,27 @@ async function copyAll() {
   if (indexError) void notify(`Offsite backup index couldn't be updated: ${indexError}`);
 }
 
-/** Starts a copy of every server in the background, unless one is already running. */
-export async function startCopy() {
-  if (!(await offsiteSettings())) throw new NotFoundError("Offsite backups aren't set up.");
+/** Reserves the slot synchronously, including the time needed to find the actor. */
+function queueCopy() {
   // A copy asked for while one runs (for example, right after moving to a new destination) runs next.
   if (jobs.copying) jobs.again = true;
   else {
-    const actor = await currentActor();
-    jobs.copying = runAsActor(actor, copyAll).catch((error) => console.error("Blocky offsite copy failed", error)).finally(() => {
-      jobs.copying = undefined;
+    // Assign the job before awaiting the actor or copy work. Otherwise concurrent requests both
+    // see an empty slot and start overlapping restic runs against the same repositories.
+    const running = currentActor().then((actor) => runAsActor(actor, copyAll)).catch((error) => console.error("Blocky offsite copy failed", error)).finally(() => {
+      if (jobs.copying === running) jobs.copying = undefined;
       if (jobs.again) { jobs.again = false; void startCopy().catch(() => undefined); }
     });
+    jobs.copying = running;
   }
   return { message: "Copying to the offsite destination." };
+}
+
+/** Starts a copy of every server in the background, unless one is already running. */
+export async function startCopy() {
+  if (!(await offsiteSettings())) throw new NotFoundError("Offsite backups aren't set up.");
+  if (jobs.configuring) throw new ConflictError("Offsite backups are being set up. Try again when that finishes.");
+  return queueCopy();
 }
 
 /** Called every minute by the scheduler. */

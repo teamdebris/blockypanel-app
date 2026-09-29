@@ -1,15 +1,16 @@
 import "server-only";
 
 import { constants, createWriteStream } from "node:fs";
-import { chmod, lchown, lstat, mkdir, open, readdir, realpath, rename, rm, stat } from "node:fs/promises";
+import { lchown, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
+import { anchorDirectory, anchorParent, insideRoot } from "@/lib/anchored-paths";
 import { extractArchive } from "@/lib/archive";
 import { assertManagedServer } from "@/lib/docker";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
-import { serverDataPath } from "@/lib/paths";
+import { serverDataPath, serverRootPath, storagePath } from "@/lib/paths";
 import { recordEvent } from "@/lib/store";
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -72,8 +73,7 @@ async function safeTarget(id: string, requested: string, allowMissing = false) {
   const relative = cleanRelativePath(requested);
   const root = await rootFor(id);
   const target = path.resolve(root, ...relative.split("/").filter(Boolean));
-  const relation = path.relative(root, target);
-  if (relation.startsWith("..") || path.isAbsolute(relation)) throw new BadRequestError("Invalid file path.");
+  if (!insideRoot(root, target)) throw new BadRequestError("Invalid file path.");
 
   let current = root;
   for (const segment of relative.split("/").filter(Boolean)) {
@@ -91,21 +91,11 @@ async function safeTarget(id: string, requested: string, allowMissing = false) {
   return { root, target, relative };
 }
 
-/**
- * Re-checks, immediately before use, that a directory still resolves inside the server root. The
- * Minecraft container (and its plugins) can write to the same directory, so a path component could
- * be swapped for a symlink between the lstat walk above and the actual operation.
- */
-async function assertContained(root: string, directory: string) {
-  const [realRoot, realDirectory] = await Promise.all([realpath(root), realpath(directory)]);
-  const relation = path.relative(realRoot, realDirectory);
-  if (relation.startsWith("..") || path.isAbsolute(relation)) throw new BadRequestError("Invalid file path.");
-}
-
 function openError(error: unknown): never {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === "ELOOP") throw new BadRequestError("Symbolic links cannot be managed from the panel.");
   if (code === "ENOENT") throw new NotFoundError("File not found.");
+  if (code === "ENOTDIR") throw new BadRequestError("The requested path is not a directory.");
   if (code === "EISDIR") throw new BadRequestError("The requested path is a directory.");
   throw error;
 }
@@ -141,18 +131,19 @@ export async function listServerFiles(id: string, requested = "") {
     return entries.sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1);
   }
 
-  const { root, target } = await safeTarget(id, relative);
-  await assertContained(root, target);
-  if (!(await stat(target)).isDirectory()) throw new BadRequestError("The requested path is not a directory.");
-  const entries = await readdir(target, { withFileTypes: true });
-  const records = await Promise.all(entries.filter((entry) => !entry.isSymbolicLink()).map(async (entry): Promise<ServerFileEntry | null> => {
-    if (!entry.isDirectory() && !entry.isFile()) return null;
-    const itemPath = childPath(relative, entry.name);
-    const details = await lstat(path.join(target, entry.name)).catch(() => undefined);
-    if (!details) return null;
-    return { name: entry.name, path: itemPath, type: entry.isDirectory() ? "directory" : "file", size: entry.isFile() ? details.size : 0, modifiedAt: details.mtime.toISOString(), editable: entry.isFile() && details.size <= MAX_TEXT_BYTES };
-  }));
-  return records.filter((entry): entry is ServerFileEntry => Boolean(entry)).sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1);
+  const { root } = await safeTarget(id, relative);
+  const directory = await anchorDirectory(root, relative).catch(openError);
+  try {
+    const entries = await readdir(directory.path, { withFileTypes: true });
+    const records = await Promise.all(entries.filter((entry) => !entry.isSymbolicLink()).map(async (entry): Promise<ServerFileEntry | null> => {
+      if (!entry.isDirectory() && !entry.isFile()) return null;
+      const itemPath = childPath(relative, entry.name);
+      const details = await lstat(path.join(directory.path, entry.name)).catch(() => undefined);
+      if (!details || details.isSymbolicLink()) return null;
+      return { name: entry.name, path: itemPath, type: details.isDirectory() ? "directory" : "file", size: details.isFile() ? details.size : 0, modifiedAt: details.mtime.toISOString(), editable: details.isFile() && details.size <= MAX_TEXT_BYTES };
+    }));
+    return records.filter((entry): entry is ServerFileEntry => Boolean(entry)).sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === "directory" ? -1 : 1);
+  } finally { await directory.close(); }
 }
 
 export async function readServerTextFile(id: string, requested: string) {
@@ -165,15 +156,17 @@ export async function readServerTextFile(id: string, requested: string) {
     if (!node || node.type !== "file") throw new NotFoundError("File not found.");
     content = node.content || Buffer.alloc(0);
   } else {
-    const { root, target } = await safeTarget(id, relative);
-    await assertContained(root, path.dirname(target));
-    const handle = await open(target, constants.O_RDONLY | NOFOLLOW).catch(openError);
+    const { root } = await safeTarget(id, relative);
+    const parent = await anchorParent(root, relative).catch(openError);
     try {
-      const details = await handle.stat();
-      if (!details.isFile()) throw new BadRequestError("The requested path is not a file.");
-      if (details.size > MAX_TEXT_BYTES) throw new BadRequestError("Files larger than 2 MB can be downloaded but not edited in the browser.");
-      content = await handle.readFile();
-    } finally { await handle.close(); }
+      const handle = await open(path.join(parent.path, parent.name), constants.O_RDONLY | NOFOLLOW).catch(openError);
+      try {
+        const details = await handle.stat();
+        if (!details.isFile()) throw new BadRequestError("The requested path is not a file.");
+        if (details.size > MAX_TEXT_BYTES) throw new BadRequestError("Files larger than 2 MB can be downloaded but not edited in the browser.");
+        content = await handle.readFile();
+      } finally { await handle.close(); }
+    } finally { await parent.close(); }
   }
   if (!isProbablyText(content)) throw new BadRequestError("This appears to be a binary file. Download it instead.");
   return content.toString("utf8");
@@ -184,12 +177,16 @@ export async function serverFileForDownload(id: string, requested: string) {
   const relative = cleanRelativePath(requested);
   if (!relative) throw new BadRequestError("Select a file first.");
   if (process.env.BLOCKY_DEMO === "true") throw new BadRequestError("File downloads require a real Docker host.");
-  const { root, target } = await safeTarget(id, relative);
-  await assertContained(root, path.dirname(target));
-  const handle = await open(target, constants.O_RDONLY | NOFOLLOW).catch(openError);
-  const details = await handle.stat();
-  if (!details.isFile()) { await handle.close(); throw new BadRequestError("The requested path is not a file."); }
-  return { handle, name: path.basename(target), size: details.size };
+  const { root } = await safeTarget(id, relative);
+  const parent = await anchorParent(root, relative).catch(openError);
+  try {
+    const handle = await open(path.join(parent.path, parent.name), constants.O_RDONLY | NOFOLLOW).catch(openError);
+    try {
+      const details = await handle.stat();
+      if (!details.isFile()) throw new BadRequestError("The requested path is not a file.");
+      return { handle, name: parent.name, size: details.size };
+    } catch (error) { await handle.close(); throw error; }
+  } finally { await parent.close(); }
 }
 
 export async function createServerDirectory(id: string, requested: string) {
@@ -200,16 +197,22 @@ export async function createServerDirectory(id: string, requested: string) {
     if (nodes.has(relative)) throw new BadRequestError("A file or directory with that name already exists.");
     nodes.set(relative, { type: "directory", modifiedAt: new Date().toISOString() });
   } else {
-    const { root, target } = await safeTarget(id, relative, true);
-    await assertContained(root, path.dirname(target));
-    await mkdir(target).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "EEXIST") throw new BadRequestError("A file or directory with that name already exists.");
-      if (error.code === "ENOENT") throw new BadRequestError("Parent directory not found.");
-      throw error;
-    });
-    // lchown: the game container can write here, so never follow a link it might have planted.
-    await lchown(target, 1000, 1000).catch(() => undefined);
-    await chmod(target, 0o770).catch(() => undefined);
+    const { root } = await safeTarget(id, relative, true);
+    const parent = await anchorParent(root, relative).catch(openError);
+    try {
+      const target = path.join(parent.path, parent.name);
+      await mkdir(target).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "EEXIST") throw new BadRequestError("A file or directory with that name already exists.");
+        if (error.code === "ENOENT") throw new BadRequestError("Parent directory not found.");
+        throw error;
+      });
+      // Use the newly opened inode for ownership and permissions; chmod(path) follows a swapped link.
+      const created = await open(target, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | NOFOLLOW).catch(openError);
+      try {
+        await created.chown(1000, 1000).catch(() => undefined);
+        await created.chmod(0o770).catch(() => undefined);
+      } finally { await created.close(); }
+    } finally { await parent.close(); }
   }
   await recordEvent(id, "file-create", `Directory ${relative} was created.`, "info");
 }
@@ -220,15 +223,15 @@ export async function writeServerTextFile(id: string, requested: string, content
   if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new BadRequestError("Text files are limited to 2 MB.");
   if (process.env.BLOCKY_DEMO === "true") demoFiles(id).set(relative, { type: "file", content: Buffer.from(content), modifiedAt: new Date().toISOString() });
   else {
-    const { root, target } = await safeTarget(id, relative, true);
-    const parent = path.dirname(target);
-    if (!(await stat(parent).catch(() => undefined))?.isDirectory()) throw new BadRequestError("Parent directory not found.");
-    await assertContained(root, parent);
-    const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | NOFOLLOW, 0o660).catch(openError);
+    const { root } = await safeTarget(id, relative, true);
+    const parent = await anchorParent(root, relative).catch(openError);
     try {
-      await handle.writeFile(content, "utf8");
-      await handle.chown(1000, 1000).catch(() => undefined);
-    } finally { await handle.close(); }
+      const handle = await open(path.join(parent.path, parent.name), constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | NOFOLLOW, 0o660).catch(openError);
+      try {
+        await handle.writeFile(content, "utf8");
+        await handle.chown(1000, 1000).catch(() => undefined);
+      } finally { await handle.close(); }
+    } finally { await parent.close(); }
   }
   await recordEvent(id, "file-write", `File ${relative} was saved.`, "info");
 }
@@ -243,21 +246,21 @@ export async function uploadServerFile(id: string, requested: string, body: Read
     if (content.length > MAX_UPLOAD_BYTES) throw new BadRequestError("Uploads are limited to 4 GB.");
     demoFiles(id).set(relative, { type: "file", content, modifiedAt: new Date().toISOString() });
   } else {
-    const { root, target } = await safeTarget(id, relative, true);
-    const parent = path.dirname(target);
-    if (!(await stat(parent).catch(() => undefined))?.isDirectory()) throw new BadRequestError("Parent directory not found.");
-    if ((await lstat(target).catch(() => undefined))?.isDirectory()) throw new BadRequestError("A directory with that name already exists.");
-    await assertContained(root, parent);
-    const temporary = path.join(parent, `.blocky-upload-${randomUUID()}`);
-    let bytes = 0;
-    const limiter = new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > MAX_UPLOAD_BYTES ? new BadRequestError("Uploads are limited to 4 GB.") : null, chunk); } });
+    const { root } = await safeTarget(id, relative, true);
+    const parent = await anchorParent(root, relative).catch(openError);
     try {
-      await pipeline(Readable.from(webStreamChunks(body)), limiter, createWriteStream(temporary, { flags: "wx", mode: 0o660 }));
-      // Ownership is set on our own temp file, then rename() replaces whatever is at the target
-      // (even a symlink) without following it. Changing the target afterwards could follow a link.
-      await lchown(temporary, 1000, 1000).catch(() => undefined);
-      await rename(temporary, target);
-    } finally { await rm(temporary, { force: true }).catch(() => undefined); }
+      const target = path.join(parent.path, parent.name);
+      if ((await lstat(target).catch(() => undefined))?.isDirectory()) throw new BadRequestError("A directory with that name already exists.");
+      const temporary = path.join(parent.path, `.blocky-upload-${randomUUID()}`);
+      let bytes = 0;
+      const limiter = new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > MAX_UPLOAD_BYTES ? new BadRequestError("Uploads are limited to 4 GB.") : null, chunk); } });
+      try {
+        await pipeline(Readable.from(webStreamChunks(body)), limiter, createWriteStream(temporary, { flags: "wx", mode: 0o660 }));
+        // rename replaces a final symlink without following it; the parent stays pinned throughout.
+        await lchown(temporary, 1000, 1000).catch(() => undefined);
+        await rename(temporary, target);
+      } finally { await rm(temporary, { force: true }).catch(() => undefined); }
+    } finally { await parent.close(); }
   }
   await recordEvent(id, "file-upload", `File ${relative} was uploaded.`, "info");
 }
@@ -278,13 +281,18 @@ export async function renameServerFile(id: string, from: string, to: string) {
       nodes.set(destination + key.slice(source.length), node);
     }
   } else {
-    const { root, target: sourcePath } = await safeTarget(id, source);
-    const { target: destinationPath } = await safeTarget(id, destination, true);
-    if (await lstat(destinationPath).catch(() => undefined)) throw new BadRequestError("A file or directory with that name already exists.");
-    if (!(await stat(path.dirname(destinationPath)).catch(() => undefined))?.isDirectory()) throw new BadRequestError("Destination folder not found.");
-    await assertContained(root, path.dirname(sourcePath));
-    await assertContained(root, path.dirname(destinationPath));
-    await rename(sourcePath, destinationPath);
+    const { root } = await safeTarget(id, source);
+    await safeTarget(id, destination, true);
+    const fromParent = await anchorParent(root, source).catch(openError);
+    try {
+      const toParent = await anchorParent(root, destination).catch(openError);
+      try {
+        const sourcePath = path.join(fromParent.path, fromParent.name);
+        const destinationPath = path.join(toParent.path, toParent.name);
+        if (await lstat(destinationPath).catch(() => undefined)) throw new BadRequestError("A file or directory with that name already exists.");
+        await rename(sourcePath, destinationPath);
+      } finally { await toParent.close(); }
+    } finally { await fromParent.close(); }
   }
   await recordEvent(id, "file-rename", `${source} was renamed to ${destination}.`, "info");
 }
@@ -299,20 +307,28 @@ export function archiveProblem(error: unknown): never {
 export async function serverArchivePath(id: string, requested: string) {
   const relative = cleanRelativePath(requested);
   if (!ARCHIVE_NAME.test(relative)) throw new BadRequestError("Choose a .zip, .tar, or .tar.gz file.");
-  const { root, target } = await safeTarget(id, relative);
-  await assertContained(root, path.dirname(target));
-  if (!(await lstat(target)).isFile()) throw new BadRequestError("That isn't a file.");
-  return { root, target, relative };
+  const { root } = await safeTarget(id, relative);
+  const parent = await anchorParent(root, relative).catch(openError);
+  try {
+    const handle = await open(path.join(parent.path, parent.name), constants.O_RDONLY | NOFOLLOW).catch(openError);
+    try {
+      if (!(await handle.stat()).isFile()) throw new BadRequestError("That isn't a file.");
+      // The archive reader opens its input repeatedly. /proc/self/fd keeps every read on this
+      // already checked inode even if the game replaces the archive's name while it is extracted.
+      const target = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` : path.join(parent.path, parent.name);
+      return { target, parent: parent.path, relative, close: async () => { try { await handle.close(); } finally { await parent.close(); } } };
+    } catch (error) { await handle.close(); throw error; }
+  } catch (error) { await parent.close(); throw error; }
 }
 
-/** Hands a tree the panel just created to the game's user. lchown never follows links (none are made). */
+/** Stage outside data/ so the game cannot rename this tree while it is being prepared. */
 export async function chownTree(directory: string) {
-  await lchown(directory, 1000, 1000).catch(() => undefined);
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) await chownTree(full);
     else if (entry.isFile()) await lchown(full, 1000, 1000).catch(() => undefined);
   }
+  await lchown(directory, 1000, 1000).catch(() => undefined);
 }
 
 /**
@@ -322,23 +338,23 @@ export async function chownTree(directory: string) {
  */
 export async function extractServerArchive(id: string, requested: string) {
   if (process.env.BLOCKY_DEMO === "true") throw new BadRequestError("Extracting requires a real Docker host.");
-  const { root, target, relative } = await serverArchivePath(id, requested);
-  const parent = path.dirname(target);
-  const staging = path.join(parent, `.blocky-extract-${randomUUID()}`);
-  await mkdir(staging, { mode: 0o770 });
+  const archive = await serverArchivePath(id, requested);
+  const { target, relative, parent } = archive;
+  const staging = storagePath(serverRootPath(id), `.blocky-extract-${randomUUID()}`);
   try {
+    await mkdir(staging, { mode: 0o700 });
     const result = await extractArchive(target, staging).catch(archiveProblem);
     const names = await readdir(staging);
     const existing: string[] = [];
     for (const name of names) if (await lstat(path.join(parent, name)).catch(() => undefined)) existing.push(name);
     if (existing.length) throw new BadRequestError(`These are already here: ${existing.slice(0, 5).join(", ")}${existing.length > 5 ? ", …" : ""}. Rename or delete them first.`);
     await chownTree(staging);
-    await assertContained(root, parent);
     for (const name of names) await rename(path.join(staging, name), path.join(parent, name));
     await recordEvent(id, "file-extract", `${relative} was extracted (${result.files} file${result.files === 1 ? "" : "s"}${result.skipped ? `; ${result.skipped} links or special files skipped` : ""}).`, "info");
     return result;
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    await archive.close();
   }
 }
 
@@ -350,9 +366,10 @@ export async function deleteServerFile(id: string, requested: string) {
     if (!nodes.has(relative)) throw new NotFoundError("File not found.");
     for (const key of [...nodes.keys()]) if (key === relative || key.startsWith(`${relative}/`)) nodes.delete(key);
   } else {
-    const { root, target } = await safeTarget(id, relative);
-    await assertContained(root, path.dirname(target));
-    await rm(target, { recursive: true, force: false });
+    const { root } = await safeTarget(id, relative);
+    const parent = await anchorParent(root, relative).catch(openError);
+    try { await rm(path.join(parent.path, parent.name), { recursive: true, force: false }); }
+    finally { await parent.close(); }
   }
   await recordEvent(id, "file-delete", `${relative} was deleted.`, "warning");
 }

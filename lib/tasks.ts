@@ -101,7 +101,13 @@ export function nextRun(task: ScheduledTask) {
  */
 export function taskAction(task: ScheduledTask, now: number): { action: "wait" } | { action: "run" | "skip"; at: number } {
   if (!task.enabled) return { action: "wait" };
-  const at = nextRun(task);
+  let at = nextRun(task);
+  if (task.schedule.type === "interval" && now > at) {
+    // Resume at the latest occurrence after downtime; replaying every missed interval can restart
+    // a server or send the same command once per scheduler tick for hours.
+    const interval = task.schedule.hours * HOUR;
+    at += Math.floor((now - at) / interval) * interval;
+  }
   if (now < at - leadTime(task)) return { action: "wait" };
   if (task.schedule.type === "daily" && now > at + MISSED_GRACE_MS) return { action: "skip", at };
   return { action: "run", at };

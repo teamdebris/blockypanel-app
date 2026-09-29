@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readdir } from "node:fs/promises";
 import path from "node:path";
+import { anchorDirectory } from "@/lib/anchored-paths";
 import { HttpError } from "@/lib/errors";
 import { concreteVersion, modrinthTarget, searchFacets } from "@/lib/modrinth-core";
 import { serverDataPath } from "@/lib/paths";
@@ -101,8 +102,8 @@ const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 const MAX_JAR_BYTES = 256 * 1024 ** 2;
 
 /** Hashes a file opened without following links, so a planted symlink can't point it elsewhere. */
-async function sha1(file: string, size: number, mtimeMs: number) {
-  const cached = hashCache.get(file);
+async function sha1(file: string, cacheKey: string, size: number, mtimeMs: number) {
+  const cached = hashCache.get(cacheKey);
   if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached.sha1;
   const handle = await open(file, constants.O_RDONLY | NOFOLLOW);
   try {
@@ -110,7 +111,7 @@ async function sha1(file: string, size: number, mtimeMs: number) {
     const hash = createHash("sha1");
     for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk as Buffer);
     const value = hash.digest("hex");
-    hashCache.set(file, { size, mtimeMs, sha1: value });
+    hashCache.set(cacheKey, { size, mtimeMs, sha1: value });
     if (hashCache.size > 5000) hashCache.delete(hashCache.keys().next().value!);
     return value;
   } finally { await handle.close(); }
@@ -121,19 +122,20 @@ async function sha1(file: string, size: number, mtimeMs: number) {
  * a plugin could otherwise point the panel at files outside the server's data (lstat, O_NOFOLLOW).
  */
 async function jarsIn(serverId: string, folder: string) {
-  const directory = path.join(serverDataPath(serverId), folder);
-  if (!(await lstat(directory).catch(() => undefined))?.isDirectory()) return [];
-  let names: string[] = [];
-  try { names = (await readdir(directory)).filter((name) => name.toLowerCase().endsWith(".jar")); } catch { return []; }
-  const jars: { name: string; size: number; sha1: string }[] = [];
-  for (const name of names.slice(0, 500)) {
-    const file = path.join(directory, name);
-    const info = await lstat(file).catch(() => undefined);
-    if (!info?.isFile() || info.size > MAX_JAR_BYTES) continue;
-    const hash = await sha1(file, info.size, info.mtimeMs).catch(() => undefined);
-    if (hash) jars.push({ name, size: info.size, sha1: hash });
-  }
-  return jars;
+  const directory = await anchorDirectory(serverDataPath(serverId), folder).catch(() => undefined);
+  if (!directory) return [];
+  try {
+    const names = (await readdir(directory.path).catch(() => [])).filter((name) => name.toLowerCase().endsWith(".jar"));
+    const jars: { name: string; size: number; sha1: string }[] = [];
+    for (const name of names.slice(0, 500)) {
+      const file = path.join(directory.path, name);
+      const info = await lstat(file).catch(() => undefined);
+      if (!info?.isFile() || info.size > MAX_JAR_BYTES) continue;
+      const hash = await sha1(file, path.join(serverDataPath(serverId), folder, name), info.size, info.mtimeMs).catch(() => undefined);
+      if (hash) jars.push({ name, size: info.size, sha1: hash });
+    }
+    return jars;
+  } finally { await directory.close(); }
 }
 
 // Everyone who opens the tab triggers these lookups; cache them so polling can't get the panel
