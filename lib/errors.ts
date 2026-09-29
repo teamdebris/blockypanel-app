@@ -1,13 +1,16 @@
 export class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  readonly status: number;
+  constructor(status: number, message: string) {
     super(message);
     this.name = "HttpError";
+    this.status = status;
   }
 }
 
 export class BadRequestError extends HttpError {
   /** `field` names the form input at fault, so the UI can highlight it. */
-  constructor(message: string, readonly field?: string) { super(400, message); }
+  readonly field?: string;
+  constructor(message: string, field?: string) { super(400, message); this.field = field; }
 }
 
 export class NotFoundError extends HttpError {

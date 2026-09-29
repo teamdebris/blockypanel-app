@@ -1,9 +1,11 @@
 import "server-only";
 
-import { chmod, chown, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { once } from "node:events";
 import { PassThrough, Readable } from "node:stream";
 import path from "node:path";
+import { anchorDirectory, anchorParent } from "@/lib/anchored-paths";
 import { randomBytes, randomUUID } from "node:crypto";
 import Docker, { Container, ContainerCreateOptions, ContainerInfo } from "dockerode";
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
@@ -467,16 +469,22 @@ async function backupCount(id: string) {
   return count;
 }
 
-/** Sums file sizes under a directory without following symlinks. */
-async function directorySize(directory: string): Promise<number> {
-  let total = 0;
-  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    const full = path.join(directory, entry.name);
-    if (entry.isDirectory()) total += await directorySize(full);
-    else if (entry.isFile()) total += (await lstat(full).catch(() => ({ size: 0 }))).size;
-  }
-  return total;
+/** Sums data without following a directory the game swaps for a link during traversal. */
+async function directorySize(root: string, relative = ""): Promise<number> {
+  const directory = await anchorDirectory(root, relative).catch(() => undefined);
+  if (!directory) return 0;
+  try {
+    let total = 0;
+    for (const entry of await readdir(directory.path, { withFileTypes: true }).catch(() => [])) {
+      const child = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) total += await directorySize(root, child);
+      else if (entry.isFile()) {
+        const details = await lstat(path.join(directory.path, entry.name)).catch(() => undefined);
+        if (details?.isFile()) total += details.size;
+      }
+    }
+    return total;
+  } finally { await directory.close(); }
 }
 
 /** World size, measured from the panel side so it works for stopped servers too. Refreshed every five minutes. */
@@ -808,6 +816,31 @@ async function replaceServer(info: ContainerInfo, nextMeta: ServerMeta, reason: 
   }
 }
 
+/** The game's properties file is in its writable volume, so hold its parent and refuse links. */
+async function readWorldProperties(id: string) {
+  const parent = await anchorParent(serverDataPath(id), "server.properties");
+  try {
+    let handle;
+    try { handle = await open(path.join(parent.path, parent.name), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false, content: "" };
+      if ((error as NodeJS.ErrnoException).code === "ELOOP") throw new BadRequestError("server.properties is a symbolic link; fix it before re-rolling.");
+      throw error;
+    }
+    try { return { exists: true, content: await handle.readFile("utf8") }; }
+    finally { await handle.close(); }
+  } finally { await parent.close(); }
+}
+
+async function writeWorldProperties(id: string, content: string) {
+  const parent = await anchorParent(serverDataPath(id), "server.properties");
+  try {
+    const handle = await open(path.join(parent.path, parent.name), constants.O_WRONLY | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0));
+    try { await handle.writeFile(content, "utf8"); }
+    finally { await handle.close(); }
+  } finally { await parent.close(); }
+}
+
 /**
  * Deletes a Minecraft world (overworld, Nether, End) and starts the server so it generates a new
  * one, with `seed` or a random one. Plugins, mods, configs, the whitelist, and ops are kept. No
@@ -824,10 +857,7 @@ export async function rerollWorld(id: string, seed: string) {
   const info = await findInfo(id);
   const meta = metaFromLabels(info.Labels);
   // Validated before anything is stopped, so a bad level-name fails without downtime.
-  const propertiesFile = path.join(serverDataPath(id), "server.properties");
-  const propertiesInfo = await lstat(propertiesFile).catch(() => undefined);
-  if (propertiesInfo?.isSymbolicLink()) throw new BadRequestError("server.properties is a symbolic link; fix it before re-rolling.");
-  levelName(propertiesInfo ? await readFile(propertiesFile, "utf8") : "");
+  levelName((await readWorldProperties(id)).content);
   return startServerOperation(id, "reroll", "Re-rolling the world", () => rerollUnlocked(info, meta, { ...meta, seed }));
 }
 
@@ -841,10 +871,7 @@ async function rerollUnlocked(info: ContainerInfo, oldMeta: ServerMeta, nextMeta
 
   setOperationStep(id, "Deleting the world");
   const root = serverDataPath(id);
-  const propertiesFile = path.join(root, "server.properties");
-  const propertiesInfo = await lstat(propertiesFile).catch(() => undefined);
-  if (propertiesInfo?.isSymbolicLink()) throw new Error("server.properties is a symbolic link; fix it before re-rolling.");
-  const properties = propertiesInfo ? await readFile(propertiesFile, "utf8") : "";
+  const { exists: propertiesExist, content: properties } = await readWorldProperties(id);
   const level = levelName(properties);
   const deleted: string[] = [];
   for (const folder of worldFolders(level)) {
@@ -856,7 +883,7 @@ async function rerollUnlocked(info: ContainerInfo, oldMeta: ServerMeta, nextMeta
   }
   // The image only writes level-seed when a seed is set, so an old seed would otherwise stay in
   // server.properties and regenerate the same world.
-  if (propertiesInfo) await writeFile(propertiesFile, withProperty(properties, "level-seed", nextMeta.seed));
+  if (propertiesExist) await writeWorldProperties(id, withProperty(properties, "level-seed", nextMeta.seed));
 
   let container = old;
   if (nextMeta.seed !== oldMeta.seed) {
