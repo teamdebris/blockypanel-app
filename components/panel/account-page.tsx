@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { LoaderCircle, Monitor, Smartphone } from "lucide-react";
+import { LoaderCircle, Monitor, ShieldCheck, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 import { PASSWORD_HINT, PasswordField } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -84,6 +84,14 @@ function Sessions() {
   </>;
 }
 
+/** The demo's accounts are shared and reset on restart, so the section is shown but can't be used. */
+function DemoTwoFactor() {
+  return <div className="space-y-3">
+    <p className="text-sm text-muted-foreground">Off. On a real install, turning it on asks for a code from an authenticator app (like Google Authenticator, 1Password, or Authy) after your password, and gives you ten single-use recovery codes. Not available in the demo, whose accounts are shared.</p>
+    <Button disabled title="Not available in the demo"><ShieldCheck />Turn on two-factor sign-in</Button>
+  </div>;
+}
+
 export function AccountPage() {
   const { me } = usePanel();
   if (!me) return <Skeleton className="h-64" />;
@@ -92,7 +100,9 @@ export function AccountPage() {
     <PageHeading eyebrow="Access" title="Your account" description={<span className="flex flex-wrap items-center gap-2">Signed in as <span className="font-medium text-foreground">{me.username}</span><RoleBadge role={me.role} /></span>} />
     <Section title="What you can do"><p className="text-sm text-muted-foreground">{ROLE_DESCRIPTIONS[me.role]}{me.role !== "admin" ? " An admin can change your role." : ""}</p></Section>
     {!me.demo && <Section title="Password"><ChangePassword /></Section>}
-    {!me.demo && !me.recovery && <Section title="Two-factor sign-in" description="A code from your phone, on top of your password."><TwoFactorSection /></Section>}
+    <Section title="Two-factor sign-in" description="A code from your phone, on top of your password.">
+      {me.demo ? <DemoTwoFactor /> : <TwoFactorSection />}
+    </Section>
     <Section title="Where you're signed in" description={"Sign out any device you don't recognize, then change your password."}><Sessions /></Section>
   </div>;
 }
