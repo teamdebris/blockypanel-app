@@ -2,8 +2,6 @@
 
 A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/minecraft-server`](https://github.com/itzg/docker-minecraft-server). Accounts with roles, one-click plugins and mods from Modrinth, incremental backups, and a live console, set up with one Compose file.
 
-Created with the help of agentic tools.
-
 ![Blocky dashboard](public/screenshots/dashboard.png)
 
 ## Features
@@ -237,6 +235,18 @@ npm run start    # run the built application
 Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. Running with Node directly, `BLOCKY_STORAGE` sets the data folder and `BLOCKY_DOCKER_STORAGE` the same folder as Docker sees it.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
+
+## How AI was used in the creation of this project
+
+Blocky Panel was built with agentic AI coding tools working alongside a human maintainer. Beyond writing code, they were used as:
+
+- **Security scanner:** reviewing every API route, the file manager, Docker and RCON calls, backups, and the offsite flow against a threat model (unauthenticated visitors, each role, a compromised Minecraft container, hostile archives, a tampered offsite destination), and proposing fixes.
+- **Code verifier:** tracing request paths end to end, checking that the permission table covers every route, and writing regression tests for the things that matter (hostile archives, symlink swaps, token replay, throttling, time zones).
+- **Code cleaner:** removing duplication, simplifying control flow, and keeping error handling and naming consistent across modules.
+- **Code formatter:** keeping style uniform and comments accurate as the code changed.
+- **Documentation and tests:** drafting this README, the architecture notes, and unit tests for the pure modules.
+
+Everything they produced was reviewed, run, and tested before it was merged, and the maintainer makes the release decisions.
 
 ## License
 
