@@ -19,9 +19,13 @@ jobs:
           node-version: 24
           cache: npm
       # A current restic for the offsite integration test (Ubuntu's package is older than the image's).
+      # Checked against the release's SHA256SUMS, so a tampered download can't run in CI.
       - run: |
-          curl -fsSL https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 | bunzip2 | sudo tee /usr/local/bin/restic > /dev/null
+          curl -fsSL -o restic.bz2 https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2
+          echo "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c  restic.bz2" | sha256sum -c -
+          bunzip2 -c restic.bz2 | sudo tee /usr/local/bin/restic > /dev/null
           sudo chmod +x /usr/local/bin/restic
+          rm restic.bz2
           restic version
       - run: npm ci
       - run: npm run lint

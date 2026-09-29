@@ -132,7 +132,7 @@ function helperRunner(hostFolder: string): Runner {
 
 function run(command: string, args: string[], options: { stdin?: string; timeoutMs?: number } = {}) {
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], signal: AbortSignal.timeout(options.timeoutMs ?? 30_000) });
+    const child = spawn(/* turbopackIgnore: true */ command, args, { stdio: ["pipe", "pipe", "pipe"], signal: AbortSignal.timeout(options.timeoutMs ?? 30_000) });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });

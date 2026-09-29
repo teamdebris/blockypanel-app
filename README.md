@@ -2,8 +2,6 @@
 
 A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/minecraft-server`](https://github.com/itzg/docker-minecraft-server). Accounts with roles, one-click plugins and mods from Modrinth, incremental backups, and a live console, set up with one Compose file.
 
-Created with the help of agentic tools.
-
 ![Blocky dashboard](public/screenshots/dashboard.png)
 
 ## Features
@@ -45,7 +43,7 @@ sudo curl -fsSL -o .env https://raw.githubusercontent.com/teamdebris/blockypanel
 sudo docker compose up -d
 ```
 
-The image is `ghcr.io/teamdebris/blockypanel-app`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. To stay on a release, set `BLOCKY_VERSION` in `.env` (for example `0.1.0`).
+The image is `ghcr.io/teamdebris/blockypanel-app`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. The `latest` tag follows the main branch; to stay on a release, set `BLOCKY_VERSION` in `.env` (for example `0.1.0`). To roll back, set `BLOCKY_VERSION` to the previous release and run the same two commands.
 
 To keep it somewhere else, use that folder instead and set `BLOCKY_HOST_STORAGE` in `.env` to its absolute path (for example `/srv/minecraft`). The data can also live apart from the Compose files: point `BLOCKY_HOST_STORAGE` at any absolute path.
 
@@ -154,7 +152,7 @@ Changing the server type or Minecraft version in Settings lists the plugins or m
 
 ## Backups
 
-Incremental backups use restic, installed in the panel image. Each server has an encrypted repository and a generated password file in its backup directory. Every snapshot is a complete, independently restorable copy of the world. Restic splits files into chunks and stores each chunk once, so a new snapshot only writes chunks that changed and reuses the rest. Deleting any snapshot, including the oldest, never affects the others. Its unique data is reclaimed at the next daily prune. The backup list shows each snapshot's full world size and how much new data it stored when it was taken. Downloading a snapshot exports a full `.tar` for portability. Legacy `.tar` backups continue to appear in the backup list and can be restored or downloaded; delete them explicitly when they are no longer needed.
+Incremental backups use restic, installed in the panel image. Each server has an encrypted repository and a generated password file in its backup directory. Every snapshot is a complete, independently restorable copy of the world. Restic splits files into chunks and stores each chunk once, so a new snapshot only writes chunks that changed and reuses the rest. Deleting any snapshot, including the oldest, never affects the others. Its unique data is reclaimed at the next daily prune. The backup list shows each snapshot's full world size and how much new data it stored when it was taken. Downloading a snapshot exports a full `.tar` for portability.
 
 - **Retention** is applied per kind: scheduled and manual backups each keep the configured number, and the newest five safety snapshots (taken before updates, settings changes, and restores) are kept separately so they never push out scheduled history.
 - **Scheduled backups never stop a running server.** If RCON is unavailable, the run fails, retries with backoff (15 minutes, 30, 1 hour, ... up to the interval), and alerts.
@@ -174,6 +172,8 @@ Then choose a **backup passphrase**. Everything is encrypted before it leaves th
 
 The passphrase can't be recovered: keep it in a password manager. It can be changed at any time (the old one stops working). For cloud storage, turn on object versioning or object lock at the provider, so even someone who takes over the panel can't erase older copies.
 
+A restore trusts the destination: whatever is in the copy becomes the server's files, so use credentials that only reach that bucket or folder. Restored files are handed to the game's user with any setuid bits removed.
+
 ## Alerts
 
 Set `BLOCKY_WEBHOOK_URL` to a Discord webhook (or any endpoint accepting `{"content": ..., "text": ...}`) to be notified when a scheduled backup fails, a server crashes, an operation fails, or a repository check fails.
@@ -187,6 +187,7 @@ Set `BLOCKY_WEBHOOK_URL` to a Discord webhook (or any endpoint accepting `{"cont
 ├── panel/control-state.json         # backup policies, schedule state, and operation history
 ├── panel/control-state.json.bak     # previous copy, used automatically if the main file is damaged
 ├── panel/cache/restic/              # restic metadata cache (safe to delete)
+├── panel/offsite/ssh/               # pinned SFTP host keys and the key file ssh reads (also stored in panel.db)
 ├── servers/<server-id>/data/        # world and saves (backed up)
 ├── servers/<server-id>/server.json  # saved configuration, used to reattach a removed server
 ├── backups/<server-id>/restic/      # deduplicated backups
@@ -234,6 +235,18 @@ npm run start    # run the built application
 Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. Running with Node directly, `BLOCKY_STORAGE` sets the data folder and `BLOCKY_DOCKER_STORAGE` the same folder as Docker sees it.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
+
+## How AI was used in the creation of this project
+
+Blocky Panel was built with agentic AI coding tools working alongside a human maintainer. They were used as:
+
+- **Security scanner:** reviewing every API route, the file manager, Docker and RCON calls, backups, and the offsite flow against a threat model (unauthenticated visitors, each role, a compromised Minecraft container, hostile archives, a tampered offsite destination), and proposing fixes.
+- **Code verifier:** tracing request paths end to end, checking that the permission table covers every route, and writing regression tests for the things that matter (hostile archives, symlink swaps, token replay, throttling, time zones).
+- **Code cleaner:** removing duplication, simplifying control flow, and keeping error handling and naming consistent across modules.
+- **Code formatter:** keeping style uniform and comments accurate as the code changed.
+- **Documentation and tests:** drafting this README, the architecture notes, and unit tests for the pure modules.
+
+Everything they produced was reviewed, run, and tested before it was merged, and the maintainer makes the release decisions.
 
 ## License
 

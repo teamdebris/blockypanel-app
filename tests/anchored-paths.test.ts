@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, open, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, open, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { anchorDirectory, anchorParent, insideRoot } from "../lib/anchored-paths.ts";
+import { anchorDirectory, anchorParent, insideRoot, removeAnchored } from "../lib/anchored-paths.ts";
 
 test("containment accepts ordinary names starting with two dots", async () => {
   const folder = await mkdtemp(path.join(tmpdir(), "blocky-anchor-"));
@@ -51,5 +51,55 @@ test("a held archive handle keeps reading the original file after replacement", 
       await writeFile(archive, "replacement");
       assert.equal(await readFile(`/proc/self/fd/${handle.fd}`, "utf8"), "original archive");
     } finally { await handle.close(); }
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});
+
+test("anchored deletion removes a tree, and unlinks a link instead of following it", async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), "blocky-remove-"));
+  try {
+    const root = path.join(folder, "root");
+    const outside = path.join(folder, "outside");
+    await mkdir(path.join(root, "plugins", "config", "deep"), { recursive: true });
+    await mkdir(outside);
+    await writeFile(path.join(root, "plugins", "config", "deep", "a.yml"), "a");
+    await writeFile(path.join(root, "plugins", "b.jar"), "b");
+    await writeFile(path.join(outside, "keep.txt"), "keep");
+    const anchored = await anchorDirectory(root);
+    try {
+      await removeAnchored(anchored.path, "plugins");
+      await assert.rejects(readFile(path.join(root, "plugins", "b.jar")));
+      if (process.platform !== "win32") {
+        await symlink(outside, path.join(root, "link"));
+        await removeAnchored(anchored.path, "link");
+        await assert.rejects(lstat(path.join(root, "link")));
+        assert.equal(await readFile(path.join(outside, "keep.txt"), "utf8"), "keep");
+      }
+    } finally { await anchored.close(); }
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});
+
+test("anchored deletion works through the held directory after its name is swapped for a link", { skip: process.platform !== "linux" }, async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), "blocky-remove-swap-"));
+  try {
+    const root = path.join(folder, "root");
+    const outside = path.join(folder, "outside");
+    await mkdir(path.join(root, "victim", "inner"), { recursive: true });
+    await mkdir(outside);
+    await writeFile(path.join(root, "victim", "inner", "gone.txt"), "gone");
+    await writeFile(path.join(outside, "keep.txt"), "keep");
+    // The parent is anchored (as deleteServerFile does), then the game swaps it for a link elsewhere.
+    const anchored = await anchorDirectory(root, "victim");
+    try {
+      await rename(path.join(root, "victim"), path.join(root, "moved"));
+      await symlink(outside, path.join(root, "victim"));
+      await removeAnchored(anchored.path, "inner");
+    } finally { await anchored.close(); }
+    await assert.rejects(lstat(path.join(root, "moved", "inner")));
+    assert.equal(await readFile(path.join(outside, "keep.txt"), "utf8"), "keep");
+    // Deleting the swapped name itself removes only the link.
+    const rootDir = await anchorDirectory(root);
+    try { await removeAnchored(rootDir.path, "victim"); } finally { await rootDir.close(); }
+    await assert.rejects(lstat(path.join(root, "victim")));
+    assert.equal(await readFile(path.join(outside, "keep.txt"), "utf8"), "keep");
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

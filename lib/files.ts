@@ -6,7 +6,7 @@ import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
-import { anchorDirectory, anchorParent, insideRoot } from "@/lib/anchored-paths";
+import { anchorDirectory, anchorParent, insideRoot, removeAnchored } from "@/lib/anchored-paths";
 import { extractArchive } from "@/lib/archive";
 import { assertManagedServer } from "@/lib/docker";
 import { BadRequestError, NotFoundError } from "@/lib/errors";
@@ -16,6 +16,10 @@ import { recordEvent } from "@/lib/store";
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 // Worlds are often over a gigabyte; 4 GB is also where plain (non-zip64) zip files top out.
 const MAX_UPLOAD_BYTES = 4 * 1024 ** 3;
+// The demo keeps files in memory and its accounts are public, so it holds only a little.
+const DEMO_MAX_FILES = 200;
+const DEMO_MAX_TOTAL_BYTES = 32 * 1024 ** 2;
+const DEMO_MAX_UPLOAD_BYTES = 8 * 1024 ** 2;
 export const ARCHIVE_NAME = /\.(zip|tar|tar\.gz|tgz)$/i;
 // Not defined on Windows, where the dev server may run; symlink swaps are a Linux-host concern.
 const NOFOLLOW = constants.O_NOFOLLOW ?? 0;
@@ -60,6 +64,15 @@ function demoFiles(id: string) {
     ]);
   }
   return demoGlobal.__blockyDemoFiles[id];
+}
+
+/** Refuses a demo write that would take the in-memory files past their budget. */
+function assertDemoBudget(nodes: Map<string, DemoNode>, relative: string, bytes: number) {
+  let files = 0;
+  let total = 0;
+  for (const [key, node] of nodes) { if (key !== relative) { files += 1; total += node.content?.length || 0; } }
+  if (files + 1 > DEMO_MAX_FILES) throw new BadRequestError(`The demo keeps at most ${DEMO_MAX_FILES} files per server.`);
+  if (total + bytes > DEMO_MAX_TOTAL_BYTES) throw new BadRequestError(`The demo keeps at most ${DEMO_MAX_TOTAL_BYTES / 1024 ** 2} MB of files per server.`);
 }
 
 async function rootFor(id: string) {
@@ -195,6 +208,7 @@ export async function createServerDirectory(id: string, requested: string) {
   if (process.env.BLOCKY_DEMO === "true") {
     const nodes = demoFiles(id);
     if (nodes.has(relative)) throw new BadRequestError("A file or directory with that name already exists.");
+    assertDemoBudget(nodes, relative, 0);
     nodes.set(relative, { type: "directory", modifiedAt: new Date().toISOString() });
   } else {
     const { root } = await safeTarget(id, relative, true);
@@ -221,8 +235,11 @@ export async function writeServerTextFile(id: string, requested: string, content
   const relative = cleanRelativePath(requested);
   if (!relative) throw new BadRequestError("Enter a file name.");
   if (Buffer.byteLength(content) > MAX_TEXT_BYTES) throw new BadRequestError("Text files are limited to 2 MB.");
-  if (process.env.BLOCKY_DEMO === "true") demoFiles(id).set(relative, { type: "file", content: Buffer.from(content), modifiedAt: new Date().toISOString() });
-  else {
+  if (process.env.BLOCKY_DEMO === "true") {
+    const nodes = demoFiles(id);
+    assertDemoBudget(nodes, relative, Buffer.byteLength(content));
+    nodes.set(relative, { type: "file", content: Buffer.from(content), modifiedAt: new Date().toISOString() });
+  } else {
     const { root } = await safeTarget(id, relative, true);
     const parent = await anchorParent(root, relative).catch(openError);
     try {
@@ -240,11 +257,19 @@ export async function uploadServerFile(id: string, requested: string, body: Read
   const relative = cleanRelativePath(requested);
   if (!relative) throw new BadRequestError("Choose a file to upload.");
   if (process.env.BLOCKY_DEMO === "true") {
+    const nodes = demoFiles(id);
+    assertDemoBudget(nodes, relative, 0);
     const chunks: Buffer[] = [];
-    for await (const chunk of webStreamChunks(body)) chunks.push(Buffer.from(chunk));
+    let bytes = 0;
+    for await (const chunk of webStreamChunks(body)) {
+      bytes += chunk.length;
+      // Checked as it arrives: the demo buffers uploads in memory, so it stops early instead of after 4 GB.
+      if (bytes > DEMO_MAX_UPLOAD_BYTES) throw new BadRequestError(`Demo uploads are limited to ${DEMO_MAX_UPLOAD_BYTES / 1024 ** 2} MB.`);
+      chunks.push(Buffer.from(chunk));
+    }
     const content = Buffer.concat(chunks);
-    if (content.length > MAX_UPLOAD_BYTES) throw new BadRequestError("Uploads are limited to 4 GB.");
-    demoFiles(id).set(relative, { type: "file", content, modifiedAt: new Date().toISOString() });
+    assertDemoBudget(nodes, relative, content.length);
+    nodes.set(relative, { type: "file", content, modifiedAt: new Date().toISOString() });
   } else {
     const { root } = await safeTarget(id, relative, true);
     const parent = await anchorParent(root, relative).catch(openError);
@@ -368,7 +393,8 @@ export async function deleteServerFile(id: string, requested: string) {
   } else {
     const { root } = await safeTarget(id, relative);
     const parent = await anchorParent(root, relative).catch(openError);
-    try { await rm(path.join(parent.path, parent.name), { recursive: true, force: false }); }
+    // Deleted through the held parent and each subdirectory's own descriptor (see removeAnchored).
+    try { await removeAnchored(parent.path, parent.name).catch(openError); }
     finally { await parent.close(); }
   }
   await recordEvent(id, "file-delete", `${relative} was deleted.`, "warning");

@@ -50,7 +50,8 @@ export function directRunner(options: { binary?: string; env?: Record<string, st
           ...(options.cacheDir ? { RESTIC_CACHE_DIR: options.cacheDir } : {}),
           ...(run.from ? { RESTIC_FROM_REPOSITORY: run.from.repository, RESTIC_FROM_PASSWORD: run.from.password } : {}),
         };
-        const child = spawn(options.binary || "restic", ["--retry-lock", "1m", ...(options.args || []), ...args], { env, signal: run.signal, stdio: ["pipe", "pipe", "pipe"] });
+        // turbopackIgnore: a binary name that isn't a literal makes the build's tracer copy the whole project folder into the output.
+        const child = spawn(/* turbopackIgnore: true */ options.binary || "restic", ["--retry-lock", "1m", ...(options.args || []), ...args], { env, signal: run.signal, stdio: ["pipe", "pipe", "pipe"] });
         let stdout = "";
         let stderr = "";
         child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });

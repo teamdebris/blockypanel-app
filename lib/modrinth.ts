@@ -6,7 +6,7 @@ import { lstat, open, readdir } from "node:fs/promises";
 import path from "node:path";
 import { anchorDirectory } from "@/lib/anchored-paths";
 import { HttpError } from "@/lib/errors";
-import { concreteVersion, modrinthTarget, searchFacets } from "@/lib/modrinth-core";
+import { concreteVersion, modrinthTarget, safeIconUrl, searchFacets } from "@/lib/modrinth-core";
 import { serverDataPath } from "@/lib/paths";
 import packageJson from "@/package.json";
 
@@ -63,7 +63,7 @@ export async function searchProjects(query: string, type: ServerType, version: s
   const result = await modrinth<{ hits: ApiHit[]; total_hits: number }>(`/search?${params}`);
   const value = {
     total: result.total_hits,
-    hits: result.hits.map((hit) => ({ id: hit.project_id, slug: hit.slug, title: hit.title, description: hit.description, iconUrl: hit.icon_url, downloads: hit.downloads, author: hit.author, projectUrl: projectUrl(target.kind, hit.slug) })),
+    hits: result.hits.map((hit) => ({ id: hit.project_id, slug: hit.slug, title: hit.title, description: hit.description, iconUrl: safeIconUrl(hit.icon_url), downloads: hit.downloads, author: hit.author, projectUrl: projectUrl(target.kind, hit.slug) })),
   };
   remember(searchCache, key, value);
   return value;
@@ -179,7 +179,7 @@ export async function installedProjects(serverId: string, server: { type: Server
     const installed = jar ? versions[jar.sha1] : undefined;
     const latest = jar ? updates[jar.sha1] : undefined;
     return {
-      id, slug: project?.slug || id, title: project?.title || id, description: project?.description || "", iconUrl: project?.icon_url || null, downloads: project?.downloads || 0,
+      id, slug: project?.slug || id, title: project?.title || id, description: project?.description || "", iconUrl: safeIconUrl(project?.icon_url), downloads: project?.downloads || 0,
       projectUrl: projectUrl(target.kind, project?.slug || id),
       installed: jar && installed ? { version: installed.version_number, file: jar.name } : demo ? { version: "latest", file: `${project?.slug || id}.jar` } : undefined,
       update: installed && latest && latest.id !== installed.id ? latest.version_number : undefined,

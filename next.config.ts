@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["dockerode"],
   // STORAGE_ROOT is resolved from an environment variable, so the tracer conservatively copies the
   // local storage directory (worlds, backups, restic passwords) into the build. Never ship it.
-  outputFileTracingExcludes: { "**": ["./storage/**/*", "./panel/**/*", "./servers/**/*", "./backups/**/*", "./.env*"] },
+  outputFileTracingExcludes: { "**": ["./storage/**/*", "./panel/**/*", "./servers/**/*", "./backups/**/*", "./caddy/**/*", "./.env*"] },
   allowedDevOrigins: process.env.BLOCKY_DEV_ORIGINS?.split(",").map((origin) => origin.trim()).filter(Boolean) ?? [],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
