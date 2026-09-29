@@ -20,7 +20,8 @@ function setupPasswordRequired() {
 export async function GET() {
   try {
     const needsSetup = !(await accounts()).hasActiveAdmin();
-    return NextResponse.json({ needsSetup, setupPasswordRequired: setupPasswordRequired(), setupPasswordConfigured: recoveryConfigured(), setupPasswordProblem: recoveryPasswordProblem(), recoveryAvailable: recoveryConfigured(), demo: process.env.BLOCKY_DEMO === "true" });
+    // Why BLOCKY_ADMIN_PASSWORD is refused is only for whoever is setting the panel up; afterwards it stays in the server log.
+    return NextResponse.json({ needsSetup, setupPasswordRequired: setupPasswordRequired(), setupPasswordConfigured: recoveryConfigured(), setupPasswordProblem: needsSetup ? recoveryPasswordProblem() : null, recoveryAvailable: recoveryConfigured(), demo: process.env.BLOCKY_DEMO === "true" });
   } catch (error) { return apiError(error); }
 }
 

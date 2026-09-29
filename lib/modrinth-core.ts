@@ -61,3 +61,12 @@ export function projectListChanges(before: string[], after: string[], names: Rec
   const name = (id: string) => names[id] || id;
   return { added: after.filter((id) => !before.includes(id)).map(name), removed: before.filter((id) => !after.includes(id)).map(name) };
 }
+
+/** A project icon to show, or null: only https links from Modrinth's own hosts, since the address comes from a third party. */
+export function safeIconUrl(url: unknown) {
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && /(^|\.)modrinth\.com$/i.test(parsed.hostname) ? url : null;
+  } catch { return null; }
+}

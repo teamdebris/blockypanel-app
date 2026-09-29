@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isModrinthId, modrinthEnv, modrinthTarget, projectListChanges, searchFacets } from "../lib/modrinth-core.ts";
+import { isModrinthId, modrinthEnv, modrinthTarget, projectListChanges, safeIconUrl, searchFacets } from "../lib/modrinth-core.ts";
 
 test("server types map to plugins, mods, or nothing", () => {
   assert.deepEqual(modrinthTarget("PAPER"), { kind: "plugin", label: "Plugins", folder: "plugins", loaders: ["paper", "spigot", "bukkit"] });
@@ -41,4 +41,11 @@ test("pending changes are summarized by name", () => {
   assert.deepEqual(projectListChanges(["Vebnzrzj", "AANobbMI"], ["Vebnzrzj", "P7dR8mSH"], names), { added: ["Fabric API"], removed: ["Sodium"] });
   assert.deepEqual(projectListChanges(["Vebnzrzj"], ["Vebnzrzj"], names), { added: [], removed: [] });
   assert.deepEqual(projectListChanges([], ["zzzzzzzz"], {}), { added: ["zzzzzzzz"], removed: [] });
+});
+
+test("project icons are only shown from Modrinth's own hosts over https", () => {
+  assert.equal(safeIconUrl("https://cdn.modrinth.com/data/abc/icon.png"), "https://cdn.modrinth.com/data/abc/icon.png");
+  for (const url of ["http://cdn.modrinth.com/icon.png", "https://evil.example/modrinth.com/icon.png", "https://notmodrinth.com/icon.png", "javascript:alert(1)", "", null, undefined, 42]) {
+    assert.equal(safeIconUrl(url), null, String(url));
+  }
 });

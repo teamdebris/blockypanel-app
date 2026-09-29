@@ -14,8 +14,9 @@ import {
 } from "@/lib/offsite-restic";
 import { offsiteSettings, type OffsiteSchedule, type OffsiteSettings, offsiteStatus, panelId, resetOffsiteStatus, saveOffsiteSettings, updateOffsiteStatus } from "@/lib/offsite-settings";
 import { generateSshKeyPair, hostKeyFingerprints, scanHostKey, targetFor } from "@/lib/offsite-targets";
-import { assertServerId, DOCKER_STORAGE_ROOT, isServerId } from "@/lib/paths";
+import { assertServerId, DOCKER_STORAGE_ROOT, isServerId, serverDataPath } from "@/lib/paths";
 import { serialized } from "@/lib/rate-limit";
+import { sanitizeRestoredTree } from "@/lib/restored-tree";
 import { getServerControl, recordEvent } from "@/lib/store";
 
 /**
@@ -411,7 +412,11 @@ export async function restoreServerSnapshot(serverId: string, snapshotId: string
   const { target, repository, password } = await serverTarget(serverId);
   const snapshot = (await listWorldSnapshots(target.runner, repository, password).catch((error) => { throw destinationError(error); })).find((item) => item.id === snapshotId);
   if (!snapshot) throw new NotFoundError("That offsite snapshot no longer exists.");
-  return restoreServerFiles(serverId, "Restoring an offsite backup", () => restoreWorld(target.runner, { serverId, repository, password, snapshotId: snapshot.id, path: snapshot.path }), "Offsite backup restored and health check passed.");
+  // The destination isn't under the panel's control: what comes back is handed to the game's user with setuid bits removed.
+  return restoreServerFiles(serverId, "Restoring an offsite backup", async () => {
+    await restoreWorld(target.runner, { serverId, repository, password, snapshotId: snapshot.id, path: snapshot.path });
+    await sanitizeRestoredTree(serverDataPath(serverId));
+  }, "Offsite backup restored and health check passed.");
 }
 
 // ---- Disaster recovery ----
@@ -448,6 +453,7 @@ async function restoreOne(target: Awaited<ReturnType<typeof targetFor>>, id: str
   if (!snapshot) throw new Error("No world snapshots were found for it.");
   await adoptRestoredServer(id, settings, async () => {
     await restoreWorld(target.runner, { serverId: id, repository, password, snapshotId: snapshot.id, path: snapshot.path });
+    await sanitizeRestoredTree(serverDataPath(id));
     await writeLocalRepositoryPassword(id, password);
     await createLocalFromOffsite(target.runner, { serverId: id, repository, password });
   });
