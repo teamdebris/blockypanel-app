@@ -2,7 +2,23 @@
 
 A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/minecraft-server`](https://github.com/itzg/docker-minecraft-server). Accounts with roles, one-click plugins and mods from Modrinth, incremental backups, and a live console, set up with one Compose file.
 
+**Try it:** [demo.blockypanel.com](https://demo.blockypanel.com), signed in as `admin`, `operator`, or `viewer` with the password `blocky-demo`. The demo's servers are simulated; nothing runs behind it.
+
 ![Blocky dashboard](public/screenshots/dashboard.png)
+
+<details>
+<summary>More screenshots: console, plugins, backups, schedule, files, offsite backups, and the phone layout</summary>
+
+![Live console with command replies and quick commands](public/screenshots/console.png)
+![Plugins from Modrinth, filtered to what the server can load](public/screenshots/plugins.png)
+![Incremental backups with restore, retention, and the schedule](public/screenshots/backups.png)
+![Scheduled restarts, commands, and chat messages](public/screenshots/schedule.png)
+![Files in the server's data folder, with upload and archive extraction](public/screenshots/files.png)
+![Offsite backups to cloud storage, another disk, or SFTP](public/screenshots/offsite.png)
+
+<img src="public/screenshots/mobile-console.png" alt="The console on a phone, with the bottom tab bar" width="390">
+
+</details>
 
 ## Features
 
