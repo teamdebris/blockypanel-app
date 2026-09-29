@@ -238,7 +238,7 @@ Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-s
 
 ## How AI was used in the creation of this project
 
-Blocky Panel was built with agentic AI coding tools working alongside a human maintainer. Beyond writing code, they were used as:
+Blocky Panel was built with agentic AI coding tools working alongside a human maintainer. They were used as:
 
 - **Security scanner:** reviewing every API route, the file manager, Docker and RCON calls, backups, and the offsite flow against a threat model (unauthenticated visitors, each role, a compromised Minecraft container, hostile archives, a tampered offsite destination), and proposing fixes.
 - **Code verifier:** tracing request paths end to end, checking that the permission table covers every route, and writing regression tests for the things that matter (hostile archives, symlink swaps, token replay, throttling, time zones).
