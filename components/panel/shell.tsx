@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -83,8 +83,14 @@ function AccountLink({ onNavigate }: { onNavigate?: () => void }) {
   </Link>;
 }
 
+const subscribeNever = () => () => undefined;
+
 function Preferences({ onNavigate }: { onNavigate?: () => void }) {
-  const { theme, setTheme } = useTheme();
+  const { theme: savedTheme, setTheme } = useTheme();
+  // The saved theme is only known in the browser; until hydration, no option is marked as chosen,
+  // so the server's HTML and the first client render agree.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
+  const theme = mounted ? savedTheme : undefined;
   const { notificationsEnabled, setNotificationsEnabled } = usePanel();
   const router = useRouter();
   async function logout() {
