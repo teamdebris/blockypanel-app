@@ -33,8 +33,11 @@ jobs:
           docker compose -f compose.yaml config -q
           docker compose -f compose.yaml -f compose.caddy.yaml config -q
           docker compose -f compose.demo.yaml config -q
-          docker compose -f compose.yaml config | grep -A4 "target: 2022" | grep -q "host_ip: 0.0.0.0"
-          BLOCKY_BIND_ADDRESS=127.0.0.1 docker compose -f compose.yaml config | grep -A4 "target: 2022" | grep -q "host_ip: 127.0.0.1"
+          # The SFTP port follows BLOCKY_BIND_ADDRESS unless BLOCKY_SFTP_BIND_ADDRESS is set.
+          sftp_host() { docker compose -f compose.yaml config --format json | jq -r '.services.blocky.ports[] | select(.target == 2022) | .host_ip'; }
+          test "$(sftp_host)" = "0.0.0.0"
+          test "$(BLOCKY_BIND_ADDRESS=127.0.0.1 sftp_host)" = "127.0.0.1"
+          test "$(BLOCKY_BIND_ADDRESS=127.0.0.1 BLOCKY_SFTP_BIND_ADDRESS=0.0.0.0 sftp_host)" = "0.0.0.0"
       - run: npm ci
       - run: npm run lint
       - run: npm test
