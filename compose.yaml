@@ -3,22 +3,23 @@ services:
     # Pin a release with BLOCKY_VERSION in .env (e.g. 0.1.0); compose.build.yaml builds from source instead.
     image: ghcr.io/teamdebris/blockypanel-app:${BLOCKY_VERSION:-latest}
     container_name: blocky-panel
+    # Everything you might change lives in .env (see .env.example). Nothing here needs editing.
     environment:
-      BLOCKY_STORAGE: /var/lib/blocky
+      # Where the data folder is on this machine. The panel needs it because it asks Docker to mount
+      # each server's world into its container, and Docker resolves paths on the host, not in here.
       BLOCKY_DOCKER_STORAGE: ${BLOCKY_HOST_STORAGE:-/opt/blocky-panel}
       MINECRAFT_IMAGE: ${MINECRAFT_IMAGE:-itzg/minecraft-server:latest}
       BLOCKY_ADMIN_PASSWORD: ${BLOCKY_ADMIN_PASSWORD:?Set BLOCKY_ADMIN_PASSWORD in .env}
       BLOCKY_COOKIE_SECURE: ${BLOCKY_COOKIE_SECURE:-false}
       BLOCKY_TRUST_PROXY: ${BLOCKY_TRUST_PROXY:-false}
-      BLOCKY_SCHEDULER: "true"
       BLOCKY_STARTUP_TIMEOUT_SECONDS: ${BLOCKY_STARTUP_TIMEOUT_SECONDS:-180}
       BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
       BLOCKY_WEBHOOK_URL: ${BLOCKY_WEBHOOK_URL:-}
-      BLOCKY_DEMO: ${BLOCKY_DEMO:-false}
     ports:
       - "${BLOCKY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # The data folder, mounted where the image keeps its data (/var/lib/blocky).
       - ${BLOCKY_HOST_STORAGE:-/opt/blocky-panel}:/var/lib/blocky
     restart: unless-stopped
     # Limits the damage of a panel bug. It can't contain a compromise: access to the Docker socket is

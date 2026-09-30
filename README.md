@@ -248,7 +248,9 @@ npm run build    # production build and type check
 npm run start    # run the built application
 ```
 
-Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. Running with Node directly, `BLOCKY_STORAGE` sets the data folder and `BLOCKY_DOCKER_STORAGE` the same folder as Docker sees it.
+Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. `BLOCKY_DEMO=true` runs the UI with fake servers and no Docker.
+
+Running with Node directly, the data folder is `storage/` in the project (`BLOCKY_STORAGE` changes it). If Docker runs on another machine or in a VM that sees that folder under a different path, set `BLOCKY_DOCKER_STORAGE` to the path as Docker sees it; the Compose file does this for you. `BLOCKY_DEV_ORIGINS` lists extra LAN hostnames allowed to load dev resources.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
 
