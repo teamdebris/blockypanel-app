@@ -8,7 +8,7 @@ Please report security issues privately through GitHub: on the repository's **Se
 
 Blocky Panel controls Docker through its socket, and access to the Docker socket is equivalent to root on the host. Anyone with an **admin** account in the panel effectively controls the machine. So:
 
-- **Keep the panel off the open internet** unless it's behind HTTPS. The Compose file binds it to `127.0.0.1` by default; put a reverse proxy (Caddy, nginx) or a VPN (Tailscale, WireGuard) in front of it. See "Serve it over HTTPS" in the README.
+- **Keep the panel off the open internet** unless it's behind HTTPS. The Compose file publishes port 3000 on every interface so a home network can reach it; on a machine with a public address, set `BLOCKY_BIND_ADDRESS=127.0.0.1` and put a reverse proxy (Caddy, nginx) or a VPN (Tailscale, WireGuard) in front of it. See "Serve it over HTTPS" in the README.
 - **Use a long random `BLOCKY_ADMIN_PASSWORD`.** It proves ownership at first setup and works as a recovery sign-in. The panel refuses the example value and anything under 16 characters.
 - **Give roles carefully.** Operators get the full server console, including Minecraft's `op`. Admins can install plugins, which run code on the server.
 - **Rootless Docker** limits what a compromised panel could reach to one unprivileged user.

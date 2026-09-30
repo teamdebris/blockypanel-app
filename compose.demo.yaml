@@ -17,7 +17,7 @@ services:
       BLOCKY_TRUST_PROXY: ${BLOCKY_TRUST_PROXY:-false}
       BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
     ports:
-      - "${BLOCKY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+      - "${BLOCKY_BIND_ADDRESS:-0.0.0.0}:3000:3000"
     # A small in-memory scratch space instead of a host folder.
     tmpfs:
       - /var/lib/blocky:size=64m,mode=0700

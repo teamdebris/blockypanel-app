@@ -4,6 +4,7 @@
 # 2. In .env, set:
 #      COMPOSE_FILE=compose.yaml:compose.caddy.yaml
 #      BLOCKY_DOMAIN=panel.example.com
+#      BLOCKY_BIND_ADDRESS=127.0.0.1   # so Caddy is the only way in
 # 3. docker compose up -d
 #
 # Skip this if the machine already runs a reverse proxy (Nginx Proxy Manager, Traefik, Caddy):
@@ -11,8 +12,8 @@
 services:
   blocky:
     environment:
-      # Caddy is the only way in (the panel's own port stays on 127.0.0.1), so its forwarded
-      # headers can be trusted, and every visit is over HTTPS.
+      # With the panel's own port on 127.0.0.1, Caddy is the only way in, so its forwarded headers
+      # can be trusted, and every visit is over HTTPS.
       BLOCKY_TRUST_PROXY: "true"
       BLOCKY_COOKIE_SECURE: "true"
 
