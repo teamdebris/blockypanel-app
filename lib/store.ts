@@ -156,6 +156,19 @@ export async function markBackupRun(id: string, at = new Date().toISOString()) {
   return mutate((state) => {
     const server = ensureServer(state, id);
     server.backupPolicy.lastRunAt = at;
+    // The warning is about the world not being backed up; any successful backup (manual, safety, or
+    // scheduled) settles that, and the scheduler starts counting again from zero.
+    if (server.schedule?.consecutiveFailures) server.schedule = { ...server.schedule, consecutiveFailures: 0 };
+  });
+}
+
+/** Ends a scheduled-backup failure streak without a backup (the warning was read). The next run counts afresh. */
+export async function clearScheduleFailures(id: string) {
+  return mutate((state) => {
+    const server = ensureServer(state, id);
+    const cleared = server.schedule?.consecutiveFailures ?? 0;
+    server.schedule = { ...server.schedule, consecutiveFailures: 0 };
+    return cleared;
   });
 }
 

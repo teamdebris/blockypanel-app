@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { PageHeading } from "./common";
-import { formatBytes, formatRelative, serverHref } from "./lib";
+import { api, formatBytes, formatRelative, serverHref } from "./lib";
 import { useNow, usePanel } from "./panel-context";
 import { ServerCard } from "./server-card";
 import type { MinecraftServer } from "./types";
 
-type Attention = { key: string; tone: "error" | "warning" | "busy"; title: string; detail: string; href: string; dismiss?: string };
+type Attention = { key: string; tone: "error" | "warning" | "busy"; title: string; detail: string; href: string; dismiss?: string; onDismiss?: () => Promise<void> };
 
 /** A backup is overdue once it's missed two intervals, or the schedule is failing. */
 function backupProblem(server: MinecraftServer, now: number) {
@@ -24,7 +24,7 @@ function backupProblem(server: MinecraftServer, now: number) {
 }
 
 function useAttention(now: number): Attention[] {
-  const { servers, worlds, dismissedResults } = usePanel();
+  const { servers, worlds, dismissedResults, refresh } = usePanel();
   const items: Attention[] = [];
   for (const server of servers) {
     if (server.operation) items.push({ key: `${server.id}:op`, tone: "busy", title: `${server.operation.label}: ${server.name}`, detail: `${server.operation.step || "Working"}… started ${formatRelative(server.operation.startedAt, now)}`, href: serverHref(server.id) });
@@ -32,7 +32,11 @@ function useAttention(now: number): Attention[] {
     const finished = server.lastOperation;
     if (finished && !finished.ok && !server.operation && !dismissedResults.has(finished.finishedAt)) items.push({ key: `${server.id}:last`, tone: "error", title: `${finished.label} failed on ${server.name}`, detail: finished.message, href: serverHref(server.id, "activity"), dismiss: finished.finishedAt });
     const backup = backupProblem(server, now);
-    if (backup) items.push({ key: `${server.id}:backup`, tone: "warning", title: `${server.name}: backups need attention`, detail: backup, href: serverHref(server.id, "backups") });
+    if (backup) items.push({
+      key: `${server.id}:backup`, tone: "warning", title: `${server.name}: backups need attention`, detail: backup, href: serverHref(server.id, "backups"),
+      // A failure streak can be dismissed; an overdue backup can't (only a backup fixes that).
+      ...(server.backup?.consecutiveFailures ? { onDismiss: async () => { await api(`/api/servers/${server.id}/backups/failures`, { method: "DELETE" }); await refresh(); } } : {}),
+    });
   }
   if (worlds.length) items.push({ key: "worlds", tone: "warning", title: `${worlds.length} detached world${worlds.length === 1 ? "" : "s"}`, detail: "World data from removed servers is still on disk. Reattach or delete it.", href: "/servers#detached" });
   return items;
@@ -47,7 +51,7 @@ function Metric({ icon: Icon, label, value, meta, tone }: { icon: typeof Server;
 }
 
 export function OverviewPage() {
-  const { servers, loaded, setCreateOpen, system, dismissResult } = usePanel();
+  const { servers, loaded, setCreateOpen, system, dismissResult, can } = usePanel();
   const now = useNow(15_000);
   const attention = useAttention(now);
   const online = servers.filter((server) => server.status === "running").length;
@@ -73,6 +77,7 @@ export function OverviewPage() {
           <div className="min-w-0 flex-1"><p className="text-sm font-medium">{item.title}</p><p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{item.detail}</p></div>
           <Link href={item.href} className="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-accent">View<ArrowRight className="size-3.5" /></Link>
           {item.dismiss && <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => dismissResult(item.dismiss!)}><X /></Button>}
+          {item.onDismiss && can.control && <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss until the next failure" onClick={() => void item.onDismiss!().catch(() => undefined)}><X /></Button>}
         </li>)}
       </ul> : loaded && servers.length > 0 && <p className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground"><CheckCircle2 className="size-4 text-success" />All clear. Nothing needs your attention.</p>}
     </section>

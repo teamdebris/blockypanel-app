@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Archive, CalendarClock, CheckCircle2, CloudUpload, Download, MoreHorizontal, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, Archive, CalendarClock, CheckCircle2, CloudUpload, Download, MoreHorizontal, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,12 @@ function ScheduleCard({ server, data, onSaved }: { server: MinecraftServer; data
   // Fall back to the newest backup (e.g. legacy archives) when the scheduler has no record yet.
   const lastBackupAt = policy.lastRunAt || data.backups[0]?.createdAt;
   const failing = schedule.consecutiveFailures > 0;
+  async function dismissFailures() {
+    await track(`${server.id}:dismiss-failures`, async () => {
+      await api(`/api/servers/${server.id}/backups/failures`, { method: "DELETE" });
+      onSaved();
+    });
+  }
   async function save() {
     await track(`${server.id}:policy`, async () => {
       await api(`/api/servers/${server.id}/backups/policy`, { method: "PUT", body: JSON.stringify({ enabled: draft.enabled, intervalHours: Number(draft.intervalHours), retention: Number(draft.retention) }) });
@@ -61,7 +67,10 @@ function ScheduleCard({ server, data, onSaved }: { server: MinecraftServer; data
         {failing ? <AlertTriangle className="size-4 text-destructive" /> : lastBackupAt ? <CheckCircle2 className="size-4 text-success" /> : null}
         Last backup {lastBackupAt ? <span title={formatDate(lastBackupAt)}>{formatRelative(lastBackupAt, now)}</span> : "never"}
       </p>
-      {failing && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{schedule.lastFailure || `The last ${schedule.consecutiveFailures} scheduled backups failed.`} Retrying automatically with a growing delay.</p>}
+      {failing && <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">
+        <p className="min-w-0 flex-1">{schedule.lastFailure || `The last ${schedule.consecutiveFailures} scheduled backups failed.`} Retrying automatically with a growing delay.</p>
+        {can.control && <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss until the next failure" onClick={() => void dismissFailures()} disabled={isPending(`${server.id}:dismiss-failures`)}><X /></Button>}
+      </div>}
       <OffsiteLine server={server} now={now} />
     </div>}
   </Section>;
