@@ -11,6 +11,7 @@ A Next.js (App Router) app that manages Minecraft servers as Docker containers, 
 | `lib/offsite.ts` | Offsite backups: setup, copying, passphrase changes, disaster recovery. Settings live in `panel.db` (`lib/offsite-settings.ts`). |
 | `lib/offsite-core.ts`, `lib/offsite-restic.ts`, `lib/offsite-targets.ts` | Destinations and the layout at them (an `index/` repository holding each server's repository password, opened by the panel's key or the passphrase; `servers/<id>/` per server), restic operations (tested against real restic), and where restic runs (in the panel, or a helper container for a folder on the host). |
 | `lib/files.ts` | The file manager, confined to each server's `data/` folder. Never follows symlinks. Also unpacks archives in place. |
+| `lib/sftp-core.ts`, `lib/sftp.ts`, `lib/ssh-keys.ts` | SFTP for server files: the protocol mapped onto the anchored paths (tested with a real client), sign-in with keys and generated passwords from `panel.db`, and parsing pasted public keys. Started from `instrumentation.ts`. |
 | `lib/archive.ts` | A strict .zip/.tar/.tar.gz reader and extractor (no dependencies, tested with hostile archives). |
 | `lib/world-import.ts` | Replacing a world from an uploaded archive, through `changeServerFiles` in `lib/docker.ts` (safety backup, stop, change, start, roll back on failure). |
 | `lib/tasks.ts` | Scheduled tasks: when each runs next (time zones and daylight saving), missed runs, restart warnings. Run by `runScheduledTasks` in `lib/docker.ts`; stored per server in the control state. |

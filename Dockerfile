@@ -31,7 +31,8 @@ ENV BLOCKY_BUILD=${BLOCKY_BUILD}
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-EXPOSE 3000
+# 3000: the panel. 2022: SFTP for server files (BLOCKY_SFTP_PORT).
+EXPOSE 3000 2022
 # The panel runs as root on purpose: it hands world files to the Minecraft user (uid 1000) with
 # chown, and restic restores file ownership only as root. Access to the mounted Docker socket is
 # root-equivalent on the host regardless of the container user, so a non-root user here would not

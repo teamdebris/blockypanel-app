@@ -27,6 +27,14 @@ jobs:
           sudo chmod +x /usr/local/bin/restic
           rm restic.bz2
           restic version
+      # The Compose files people download must parse, alone and with the Caddy overlay.
+      - run: |
+          export BLOCKY_ADMIN_PASSWORD=ci-placeholder-password-0000 BLOCKY_DOMAIN=panel.example.com
+          docker compose -f compose.yaml config -q
+          docker compose -f compose.yaml -f compose.caddy.yaml config -q
+          docker compose -f compose.demo.yaml config -q
+          docker compose -f compose.yaml config | grep -A4 "target: 2022" | grep -q "host_ip: 0.0.0.0"
+          BLOCKY_BIND_ADDRESS=127.0.0.1 docker compose -f compose.yaml config | grep -A4 "target: 2022" | grep -q "host_ip: 127.0.0.1"
       - run: npm ci
       - run: npm run lint
       - run: npm test

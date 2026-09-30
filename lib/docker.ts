@@ -647,6 +647,12 @@ function invalidateServerList() {
   serverListCache = { at: 0 };
 }
 
+/** Every managed server's ID and name, without the per-server stats the full list collects. */
+export async function managedServerNames(): Promise<Map<string, string>> {
+  if (isDemo()) return new Map(demoState().servers.map((server) => [server.id, server.name]));
+  return new Map((await managedContainers()).flatMap((item) => { const id = item.Labels?.["panel.id"]; return id && isServerId(id) ? [[id, item.Labels["panel.name"] || id] as [string, string]] : []; }));
+}
+
 export async function assertManagedServer(id: string) {
   if (isDemo()) { demoServer(id); return; }
   await findInfo(id);

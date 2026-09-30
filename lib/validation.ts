@@ -94,6 +94,12 @@ export const twoFactorSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("confirm"), code: z.string().trim().min(1, "Enter the code.").max(32) }),
   z.object({ action: z.literal("recovery-codes"), password: z.string().min(1, "Enter your password.").max(256) }),
 ]);
+const sftpLabel = z.string().trim().min(1, "Give it a name, like \"Laptop\".").max(60).refine((value) => !/[\u0000-\u001f]/.test(value), "Use a single line.");
+const confirmPassword = z.string().min(1, "Enter your account password to confirm.").max(256);
+export const sftpCredentialSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("key"), label: sftpLabel, publicKey: z.string().max(16_000), password: confirmPassword }),
+  z.object({ action: z.literal("password"), label: sftpLabel, password: confirmPassword }),
+]);
 export const twoFactorOffSchema = z.object({ password: z.string().min(1, "Enter your password.").max(256) });
 export const filePathSchema = z.string().max(1024);
 export const fileDirectorySchema = z.object({ path: filePathSchema.min(1) });

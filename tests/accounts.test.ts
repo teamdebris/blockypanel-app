@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { AccountError, AccountStore, INVITE_TTL, SESSION_TTL } from "../lib/account-store.ts";
+import { AccountError, AccountStore, INVITE_TTL, SESSION_TTL, SFTP_LIMITS } from "../lib/account-store.ts";
 import { hashPassword, verifyPassword } from "../lib/passwords.ts";
 import { API_ACCESS, apiAccess, pageAccess, roleAtLeast } from "../lib/roles.ts";
 import { stepAt, totpCode } from "../lib/totp.ts";
@@ -238,4 +238,41 @@ test("two-factor sign-in: setup, codes, replay protection, recovery codes, and t
   accounts.disableTwoFactor(user.id);
   assert.equal(accounts.getUser(user.id)?.twoFactor, false);
   assert.equal(accounts.recoveryCodesLeft(user.id), 0);
+});
+
+test("SFTP credentials: keys and generated passwords, admins only, never the account password", async () => {
+  const { accounts } = store();
+  const admin = await accounts.createFirstAdmin("alex", "account-password-1");
+  const viewer = await accounts.createUser("sam", "account-password-2", "viewer");
+  const key = { type: "ssh-ed25519", data: "AAAAkeyblob", fingerprint: "SHA256:abc" };
+  const added = accounts.addSftpKey(admin.id, "Laptop", key);
+  assert.equal(added.kind, "key");
+  await rejects(() => accounts.addSftpKey(admin.id, "Again", key), 409);
+  await rejects(() => accounts.addSftpKey(admin.id, "   ", { ...key, data: "other" }), 400);
+  assert.equal(accounts.sftpKeyCredential(admin.id, key.data), added.id);
+  assert.equal(accounts.sftpKeyCredential(viewer.id, key.data), undefined);
+
+  const { credential, password } = await accounts.addSftpPassword(admin.id, "FileZilla");
+  assert.ok(password.length >= 32);
+  assert.equal(await accounts.sftpPasswordCredential(admin.id, password), credential.id);
+  assert.equal(await accounts.sftpPasswordCredential(admin.id, "account-password-1"), undefined, "the account password never works");
+  assert.equal(JSON.stringify(accounts.listSftpCredentials(admin.id)).includes(password), false, "the password isn't stored or listed");
+
+  // Only active admins may sign in, and a live session ends when that changes.
+  assert.equal(accounts.sftpAccount("ALEX")?.id, admin.id);
+  assert.equal(accounts.sftpAccount("sam"), undefined);
+  assert.equal(accounts.sftpCredentialActive(credential.id), true);
+  const second = await accounts.createUser("jordan", "account-password-3", "admin");
+  accounts.setRole(second.id, admin.id, "operator");
+  assert.equal(accounts.sftpCredentialActive(credential.id), false);
+  assert.equal(accounts.sftpAccount("alex"), undefined);
+  accounts.setRole(second.id, admin.id, "admin");
+
+  assert.equal(accounts.deleteSftpCredential(viewer.id, added.id), undefined, "one user can't remove another's key");
+  assert.equal(accounts.deleteSftpCredential(admin.id, added.id)?.id, added.id);
+  assert.equal(accounts.sftpCredentialActive(added.id), false);
+  for (let count = 1; count < SFTP_LIMITS.passwords; count += 1) await accounts.addSftpPassword(admin.id, `Extra ${count}`);
+  await rejects(() => accounts.addSftpPassword(admin.id, "One too many"), 409);
+  accounts.deleteUser(second.id, admin.id);
+  assert.equal(accounts.sftpCredentialActive(credential.id), false, "deleting the user removes their credentials");
 });

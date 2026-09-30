@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CSRF_HEADER } from "@/lib/csrf";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "../common";
+import { SftpConnectButton } from "../sftp-access";
 import { api, errorMessage, formatBytes, formatDate, formatRelative, serverHref } from "../lib";
 import { useNow } from "../panel-context";
 import type { MinecraftServer, ServerFileEntry } from "../types";
@@ -193,6 +194,7 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
       </nav>
       <div className="flex gap-2">
         <input ref={uploadInput} className="hidden" type="file" multiple onChange={(event) => { queueUploads([...(event.target.files || [])]); event.target.value = ""; }} />
+        <SftpConnectButton server={server} />
         <Button size="sm" variant="outline" onClick={() => uploadInput.current?.click()} disabled={working || uploads.length > 0}><Upload />Upload</Button>
       </div>
     </div>

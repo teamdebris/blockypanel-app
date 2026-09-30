@@ -15,9 +15,13 @@ services:
       BLOCKY_STARTUP_TIMEOUT_SECONDS: ${BLOCKY_STARTUP_TIMEOUT_SECONDS:-180}
       BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
       BLOCKY_WEBHOOK_URL: ${BLOCKY_WEBHOOK_URL:-}
+      BLOCKY_SFTP: ${BLOCKY_SFTP:-true}
+      BLOCKY_SFTP_PORT: ${BLOCKY_SFTP_PORT:-2022}
     ports:
       # Reachable from the LAN by default. Behind a reverse proxy, set BLOCKY_BIND_ADDRESS=127.0.0.1 in .env.
       - "${BLOCKY_BIND_ADDRESS:-0.0.0.0}:3000:3000"
+      # SFTP for server files (FileZilla, WinSCP). Follows BLOCKY_BIND_ADDRESS unless BLOCKY_SFTP_BIND_ADDRESS is set.
+      - "${BLOCKY_SFTP_BIND_ADDRESS:-${BLOCKY_BIND_ADDRESS:-0.0.0.0}}:${BLOCKY_SFTP_PORT:-2022}:${BLOCKY_SFTP_PORT:-2022}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # The data folder, mounted where the image keeps its data (/var/lib/blocky).
