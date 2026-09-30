@@ -16,7 +16,8 @@ services:
       BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
       BLOCKY_WEBHOOK_URL: ${BLOCKY_WEBHOOK_URL:-}
     ports:
-      - "${BLOCKY_BIND_ADDRESS:-127.0.0.1}:3000:3000"
+      # Reachable from the LAN by default. Behind a reverse proxy, set BLOCKY_BIND_ADDRESS=127.0.0.1 in .env.
+      - "${BLOCKY_BIND_ADDRESS:-0.0.0.0}:3000:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # The data folder, mounted where the image keeps its data (/var/lib/blocky).

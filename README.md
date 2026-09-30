@@ -65,7 +65,7 @@ To keep it somewhere else, use that folder instead and set `BLOCKY_HOST_STORAGE`
 
 To build the image yourself, clone the repository and run `docker compose -f compose.yaml -f compose.build.yaml up -d --build`.
 
-The panel only listens on `127.0.0.1:3000` by default. Put an HTTPS reverse proxy in front of it (see [Serve it over HTTPS](#serve-it-over-https)), or, on a trusted LAN or VPN only, set `BLOCKY_BIND_ADDRESS=0.0.0.0`.
+The panel answers on port 3000 on every interface, so on a home network open `http://<the machine's IP>:3000`. On a machine that faces the internet, put an HTTPS reverse proxy in front of it (see [Serve it over HTTPS](#serve-it-over-https)) and set `BLOCKY_BIND_ADDRESS=127.0.0.1` so only the proxy can reach it.
 
 Then open the panel. The first visit shows **Set up Blocky**, which asks for `BLOCKY_ADMIN_PASSWORD` (proof that you own the machine) and creates your admin account. Invite everyone else from **Users**.
 
@@ -85,11 +85,11 @@ sudo curl -fsSLO https://raw.githubusercontent.com/teamdebris/blockypanel-app/ma
 sudo docker compose up -d
 ```
 
-Caddy gets and renews the certificate by itself and keeps it in `caddy/`. With `COMPOSE_FILE` in `.env`, the usual `docker compose` commands (`pull`, `up -d`, `logs`) include it automatically. The overlay also turns on `BLOCKY_TRUST_PROXY` and `BLOCKY_COOKIE_SECURE`. Keep `BLOCKY_BIND_ADDRESS` at `127.0.0.1`, so Caddy stays the only way in.
+Caddy gets and renews the certificate by itself and keeps it in `caddy/`. With `COMPOSE_FILE` in `.env`, the usual `docker compose` commands (`pull`, `up -d`, `logs`) include it automatically. The overlay also turns on `BLOCKY_TRUST_PROXY` and `BLOCKY_COOKIE_SECURE`. Set `BLOCKY_BIND_ADDRESS=127.0.0.1` too, so Caddy is the only way in.
 
 ### Your own reverse proxy
 
-Already running Nginx Proxy Manager, Traefik, or Caddy? Point it at the panel, which is bound to `127.0.0.1` by default:
+Already running Nginx Proxy Manager, Traefik, or Caddy? Bind the panel to loopback and point the proxy at it:
 
 ```env
 BLOCKY_BIND_ADDRESS=127.0.0.1
@@ -215,7 +215,7 @@ Managed containers carry `panel.*` labels. Those labels are the panel's desired-
 
 ## Security
 
-The panel controls Docker, which is root-equivalent on the host, so treat admin accounts like root access. Keep the panel on `127.0.0.1` behind an HTTPS reverse proxy or a VPN, and only expose game ports publicly. [SECURITY.md](SECURITY.md) covers the security model and how to report a vulnerability.
+The panel controls Docker, which is root-equivalent on the host, so treat admin accounts like root access. On anything reachable from the internet, keep the panel on `127.0.0.1` behind an HTTPS reverse proxy or a VPN, and only expose game ports publicly. [SECURITY.md](SECURITY.md) covers the security model and how to report a vulnerability.
 
 Player avatars on the server overview load from `mc-heads.net`, which receives the names of online players.
 
