@@ -56,6 +56,8 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   // GET lists backups; POST restores one.
   "/api/servers/[id]/backups": { GET: "viewer", POST: "admin" },
   "/api/servers/[id]/backups/policy": { PUT: "admin" },
+  // Dismisses the "scheduled backups are failing" warning. Listed before [name], which would match it otherwise.
+  "/api/servers/[id]/backups/failures": { DELETE: "operator" },
   "/api/servers/[id]/backups/[name]": { GET: "admin", DELETE: "admin" },
   "/api/servers/[id]/files": { GET: "admin", POST: "admin", PATCH: "admin", PUT: "admin", DELETE: "admin" },
   "/api/servers/[id]/reroll": { POST: "admin" },

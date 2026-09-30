@@ -174,6 +174,9 @@ test("the permission table covers every API route and method, and denies anythin
   assert.equal(apiAccess("/api/servers/abc/console", "POST"), "operator");
   assert.equal(apiAccess("/api/servers/abc/events", "GET"), "viewer");
   assert.equal(apiAccess("/api/servers/abc/events", "DELETE"), undefined);
+  // A static path listed before a dynamic one keeps its own access level.
+  assert.equal(apiAccess("/api/servers/abc/backups/failures", "DELETE"), "operator");
+  assert.equal(apiAccess(`/api/servers/abc/backups/snapshot-${"a".repeat(64)}`, "DELETE"), "admin");
   assert.equal(apiAccess("/api/not-a-route", "GET"), undefined);
   assert.equal(apiAccess("/api/servers/abc/../../users", "GET"), undefined);
   assert.equal(pageAccess("/users"), "admin");
