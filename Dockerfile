@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1
+# (for the cache mounts below; any Docker with BuildKit, the default since 23.0, has it)
 FROM node:24-alpine AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci
+# The npm download cache and Next's build cache persist between builds on the same machine, so a
+# rebuild after a small change (compose.build.yaml) skips most of the work.
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM node:24-alpine AS builder
 WORKDIR /app
@@ -14,7 +18,7 @@ COPY components ./components
 COPY lib ./lib
 COPY public ./public
 COPY vendor ./vendor
-RUN npm run build
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
