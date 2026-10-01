@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, TriangleAlert } from "lucide-react";
+import { ChevronDown, ExternalLink, Plus, TriangleAlert, Wand2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { type ExtraPort, hostPortsOf, ownPortProblem, PORT_PRESETS, type PortPresetId, portClash, presetPort, usedPorts, usesMods } from "@/lib/ports";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Field } from "./common";
+import { api } from "./lib";
 import { javaVersions, memoryOptions, moddedTypes, serverTypes } from "./lib";
 import type { Difficulty, GameMode, JavaVersion, MinecraftServer, NumericFormKey, ServerForm, ServerType } from "./types";
 
@@ -47,6 +50,14 @@ export function validateForm(form: ServerForm, servers: MinecraftServer[], selfI
   if (Number(form.initialMemoryPercent) > Number(form.maxMemoryPercent)) errors.initialMemoryPercent = "Can't exceed the maximum heap.";
   const protection = Number(form.spawnProtection);
   if (!Number.isInteger(protection) || protection < 0 || protection > 1000) errors.spawnProtection = "Between 0 and 1000 blocks.";
+  const extra = form.extraPorts ?? [];
+  const badPort = extra.find((entry) => !Number.isInteger(entry.port) || entry.port < 1024 || entry.port > 65535);
+  const ported = { port, gamePortUdp: form.gamePortUdp, extraPorts: extra };
+  if (badPort) errors.extraPorts = "Use ports from 1024 to 65535.";
+  else if (!errors.port) {
+    const problem = ownPortProblem(ported) || portClash(ported, usedPorts(servers.filter((server) => server.id !== selfId)));
+    if (problem) errors.extraPorts = problem;
+  }
   return errors;
 }
 
@@ -122,6 +133,89 @@ function Toggle({ id, label, hint, checked, onChange, warning }: { id: string; l
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
     </div>
     {warning}
+  </div>;
+}
+
+type MissingPort = { preset: PortPresetId; label: string; setup: string; entry?: ExtraPort; problem?: string };
+
+/** A web map's address, for the link next to its port. */
+function webAddress(port: number) {
+  return `http://${typeof window === "undefined" ? "localhost" : window.location.hostname}:${port}`;
+}
+
+/**
+ * Network: UDP on the game port, and extra ports for plugins, with presets for the most used map and
+ * voice plugins. A plugin found on the server without its port open gets a one-click suggestion.
+ * Like every setting here, changes apply on "Review and apply", which recreates the container.
+ */
+export function NetworkFields({ form, setForm, errors, idPrefix, servers, serverId }: FormProps & { serverId?: string }) {
+  const id = (name: string) => `${idPrefix}-${name}`;
+  const [missing, setMissing] = useState<MissingPort[]>([]);
+  const ports = form.extraPorts ?? [];
+  const savedPorts = JSON.stringify(servers.find((server) => server.id === serverId)?.extraPorts ?? []);
+  useEffect(() => {
+    if (!serverId) return;
+    let cancelled = false;
+    void api<{ missing: MissingPort[] }>(`/api/servers/${serverId}/ports`).then((result) => { if (!cancelled) setMissing(result.missing); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [serverId, savedPorts]);
+  const others = servers.filter((server) => server.id !== serverId);
+  const ported = { port: Number(form.port), gamePortUdp: form.gamePortUdp, extraPorts: ports };
+  const setPorts = (next: ExtraPort[]) => setForm({ ...form, extraPorts: next });
+  const update = (index: number, change: Partial<ExtraPort>) => setPorts(ports.map((entry, at) => {
+    if (at !== index) return entry;
+    const next = { ...entry, ...change };
+    // A port typed by hand is the same number inside and out, unless it came from a web map preset.
+    if (change.port !== undefined && (!entry.preset || PORT_PRESETS[entry.preset].sameNumber)) next.target = change.port;
+    return next;
+  }));
+  const hasPreset = (preset: PortPresetId) => ports.some((entry) => entry.preset === preset || (entry.target === PORT_PRESETS[preset].target && entry.protocol === PORT_PRESETS[preset].protocol));
+  function addPreset(preset: PortPresetId) {
+    const result = presetPort(preset, ported, usedPorts(others));
+    if ("entry" in result) setPorts([...ports, result.entry]);
+    else setPorts([...ports, { port: 0, protocol: PORT_PRESETS[preset].protocol, target: PORT_PRESETS[preset].target, label: PORT_PRESETS[preset].label, preset }]);
+  }
+  function addCustom() {
+    const used = new Set([...usedPorts(others).keys(), ...hostPortsOf(ported)]);
+    let port = 25600;
+    while (used.has(`${port}/tcp`) && port < 65535) port += 1;
+    setPorts([...ports, { port, protocol: "tcp", target: port, label: "" }]);
+  }
+  const suggestions = missing.filter((item) => !hasPreset(item.preset));
+  return <div className="space-y-4">
+    {suggestions.map((item) => <div key={item.preset} className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm sm:flex-row sm:items-center">
+      <Wand2 className="size-4 shrink-0 text-warning" />
+      <p className="flex-1">{item.label} is installed, but its port isn&apos;t open, so {PORT_PRESETS[item.preset].web ? "its web map can't be reached" : "players can't connect to it"}.{item.problem ? ` ${item.problem}` : ""}</p>
+      {item.entry && <Button type="button" size="sm" variant="outline" onClick={() => setPorts([...ports, item.entry!])}>Open port {item.entry.port}</Button>}
+    </div>)}
+    <Toggle id={id("game-udp")} label="Also open the game port for UDP" hint={`Port ${form.port || "–"} over UDP, for Plasmo Voice and server-list player counts (the query protocol).`} checked={form.gamePortUdp} onChange={(gamePortUdp) => setForm({ ...form, gamePortUdp })} />
+    <div className="field">
+      <Label>Extra ports</Label>
+      {ports.length > 0 && <ul className="mt-1 space-y-2">
+        {ports.map((entry, index) => <li key={index} className="rounded-lg border border-border p-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input aria-label="Name" className="min-w-0 flex-1 basis-40" value={entry.label} placeholder="What it's for" maxLength={40} onChange={(event) => update(index, { label: event.target.value })} />
+            <Input aria-label="Port" className="w-24" type="number" inputMode="numeric" min={1024} max={65535} value={entry.port || ""} onChange={(event) => update(index, { port: Number(event.target.value) || 0 })} />
+            <div className="grid grid-cols-2 gap-0.5 rounded-md border border-border p-0.5" role="radiogroup" aria-label="Protocol">
+              {(["tcp", "udp"] as const).map((protocol) => <button key={protocol} type="button" role="radio" aria-checked={entry.protocol === protocol} disabled={Boolean(entry.preset)} onClick={() => update(index, { protocol })}
+                className={cn("min-h-7 rounded px-2 text-xs uppercase disabled:cursor-not-allowed", entry.protocol === protocol ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground")}>{protocol}</button>)}
+            </div>
+            <Button type="button" variant="ghost" size="icon-xs" aria-label={`Remove ${entry.label || `port ${entry.port}`}`} onClick={() => setPorts(ports.filter((_, at) => at !== index))}><X /></Button>
+          </div>
+          {(entry.target !== entry.port || entry.preset) && <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            {entry.target !== entry.port && <span>Goes to {entry.target} inside the server.</span>}
+            {entry.preset && PORT_PRESETS[entry.preset].web && entry.port > 0 && <a href={webAddress(entry.port)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground">{webAddress(entry.port)}<ExternalLink className="size-3" /></a>}
+            {entry.preset && <span>{PORT_PRESETS[entry.preset].setup(usesMods(form.type))}</span>}
+          </p>}
+        </li>)}
+      </ul>}
+      {errors.extraPorts && <p className="field-error" role="alert">{errors.extraPorts}</p>}
+      <div className="mt-2 flex flex-wrap gap-2">
+        {(Object.keys(PORT_PRESETS) as PortPresetId[]).filter((preset) => !hasPreset(preset)).map((preset) => <Button key={preset} type="button" size="sm" variant="outline" onClick={() => addPreset(preset)}><Plus />{PORT_PRESETS[preset].label}</Button>)}
+        <Button type="button" size="sm" variant="outline" onClick={addCustom}><Plus />Other port</Button>
+      </div>
+      <p className="field-hint">Opened on this machine when the settings are applied. Plugins added from the Plugins tab get their port automatically. Your router or firewall may also need it.</p>
+    </div>
   </div>;
 }
 

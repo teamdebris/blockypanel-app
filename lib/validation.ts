@@ -1,4 +1,5 @@
 import { S3_PROVIDERS, type S3Provider } from "./offsite-core.ts";
+import { MAX_EXTRA_PORTS, ownPortProblem } from "./ports.ts";
 import { isTimeZone } from "./tasks.ts";
 import { isSafeSeed } from "./world.ts";
 import { z } from "zod";
@@ -19,6 +20,14 @@ const protectedPropertyKeys = new Set(["enable-rcon", "rcon.port", "rcon.passwor
 function propertyKeys(value: string) {
   return value.split("\n").filter((line) => line.trim()).map((line) => line.split("=", 1)[0].trim().toLowerCase());
 }
+
+const extraPortSchema = z.object({
+  port: z.number().int().min(1024, "Use a port from 1024 to 65535.").max(65535, "Use a port from 1024 to 65535."),
+  protocol: z.enum(["tcp", "udp"]),
+  target: z.number().int().min(1).max(65535).optional(),
+  label: z.string().trim().max(40).default(""),
+  preset: z.enum(["bluemap", "voicechat"]).optional(),
+}).transform((entry) => ({ ...entry, target: entry.target ?? entry.port }));
 
 const serverSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -58,6 +67,9 @@ const serverSchema = z.object({
   spawnProtection: z.number().int().min(0).max(1000).default(16),
   modrinthProjects: z.array(z.string().regex(/^[a-zA-Z0-9]{8}$/, "Invalid Modrinth project.")).max(100, "At most 100 plugins or mods.")
     .transform((ids) => [...new Set(ids)]).default([]),
+  /** UDP on the game port too: Plasmo Voice and the server-list query protocol use it. */
+  gamePortUdp: z.boolean().default(false),
+  extraPorts: z.array(extraPortSchema).max(MAX_EXTRA_PORTS, `At most ${MAX_EXTRA_PORTS} extra ports.`).default([]),
   eula: z.literal(true),
 });
 
@@ -71,8 +83,16 @@ const distanceRange = {
   path: ["simulationDistance"],
 };
 
-export const createServerSchema = serverSchema.refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange);
-export const updateServerSchema = serverSchema.omit({ eula: true }).refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange);
+/** A server's own ports must work together (no duplicates, never RCON); clashes with other servers are checked against Docker. */
+function portRules(value: { port: number; gamePortUdp: boolean; extraPorts: { port: number; protocol: "tcp" | "udp"; target: number; label: string }[] }, context: z.RefinementCtx) {
+  const problem = ownPortProblem(value);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["extraPorts"], message: problem });
+}
+
+export const createServerSchema = serverSchema.refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange).superRefine(portRules);
+export const updateServerSchema = serverSchema.omit({ eula: true }).refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange).superRefine(portRules);
+/** Single fields of a server's settings, for routes that check one value on its own. */
+export const serverFields = serverSchema.shape;
 
 export const commandSchema = z.object({ command: z.string().trim().min(1).max(512).refine((value) => !/[\u0000\r\n]/.test(value), "Commands must be a single line.") });
 export const actionSchema = z.object({ action: z.enum(["start", "stop", "restart", "backup", "update"]) });

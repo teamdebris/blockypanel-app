@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MAX_MODRINTH_PROJECTS, type ModrinthTarget, projectListChanges } from "@/lib/modrinth-core";
 import { cn } from "@/lib/utils";
+import { PORT_PRESETS } from "@/lib/ports";
 import { ConfirmDialog, Section } from "../common";
 import { api, errorMessage, formatBytes, fromServer, serverHref, toPayload } from "../lib";
 import { usePanel } from "../panel-context";
@@ -102,6 +103,9 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
   const busy = Boolean(server.operation) || isPending(`${server.id}:settings`);
   const target = data?.target;
   const noun = target?.kind === "plugin" ? "plugins" : "mods";
+  // Map and voice plugins being added whose port isn't open yet: applying opens it in the same restart.
+  const openingPorts = Object.values(PORT_PRESETS).filter((preset) => list.includes(preset.modrinth) && !saved.includes(preset.modrinth)
+    && !(server.extraPorts ?? []).some((entry) => entry.preset === preset.id || (entry.target === preset.target && entry.protocol === preset.protocol)));
 
   function add(project: Project) {
     if (list.length >= MAX_MODRINTH_PROJECTS) { toast.error(`At most ${MAX_MODRINTH_PROJECTS} ${noun} per server.`); return; }
@@ -186,6 +190,7 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
       {changes.added.length > 0 && <p><span className="font-medium text-foreground">Add:</span> {changes.added.join(", ")}</p>}
       {changes.removed.length > 0 && <p><span className="font-medium text-foreground">Remove:</span> {changes.removed.join(", ")}</p>}
       <p>The server restarts and downloads them.{server.playersOnline ? ` ${server.playersOnline} player${server.playersOnline === 1 ? " is" : "s are"} online and will be disconnected after a ${server.stopAnnounceDelaySeconds}s warning.` : ""} {target.kind === "plugin" ? "Plugins" : "Mods"} run code on your server, so only add ones you trust.</p>
+      {openingPorts.map((preset) => <p key={preset.id} className="rounded-lg border border-border p-2.5">{preset.label} needs port {preset.target}{preset.protocol === "udp" ? " (UDP)" : ""}{preset.sameNumber ? "" : " or a free one near it"}; it&apos;s opened with this restart. {preset.setup(target.kind === "mod")}</p>)}
       <p>A safety backup is taken first, and if the server doesn&apos;t start, the previous setup is restored automatically.</p>
     </ConfirmDialog>
   </div>;

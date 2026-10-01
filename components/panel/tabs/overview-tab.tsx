@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Cpu, Gauge, HardDrive, History, MemoryStick, MoreHorizontal, ShieldPlus, UserMinus, UserPlus, Users } from "lucide-react";
+import { Cpu, ExternalLink, Gauge, HardDrive, History, MemoryStick, MoreHorizontal, ShieldPlus, UserMinus, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { PORT_PRESETS } from "@/lib/ports";
 import { ConfirmDialog, Section, Sparkline, UsageBar } from "../common";
 import { api, errorMessage, formatBytes, formatDate, formatMb, javaVersions } from "../lib";
 import { usePanel } from "../panel-context";
@@ -68,6 +69,12 @@ export function OverviewTab({ server }: { server: MinecraftServer }) {
         <p className="font-medium">{server.status === "failed" ? "The server stopped unexpectedly" : server.status === "starting" ? "Starting up" : "Stopped"}</p>
         <p className="mt-1 break-words text-muted-foreground">{server.statusMessage}</p>
       </div>}
+      {(server.extraPorts ?? []).some((entry) => entry.preset && PORT_PRESETS[entry.preset].web) && <Section title="Web map">
+        <ul className="space-y-1 text-sm">{(server.extraPorts ?? []).filter((entry) => entry.preset && PORT_PRESETS[entry.preset].web).map((entry) => {
+          const address = `http://${typeof window === "undefined" ? "localhost" : window.location.hostname}:${entry.port}`;
+          return <li key={entry.port}><a href={address} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium underline-offset-2 hover:underline">{entry.label || "Web map"}<span className="font-mono text-xs text-muted-foreground">{address}</span><ExternalLink className="size-3.5 text-muted-foreground" /></a></li>;
+        })}</ul>
+      </Section>}
       <Section title="Details">
         <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           {[

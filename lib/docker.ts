@@ -18,6 +18,7 @@ import { activeOperation, type ActiveOperation, type FinishedOperation, lastOper
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isModrinthId, modrinthEnv } from "@/lib/modrinth-core";
 import { parsePlayerList, parseStatusCount } from "@/lib/players";
+import { type ExtraPort, parseExtraPorts, portBindings, portClash, usedPorts, withPluginPorts } from "@/lib/ports";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
@@ -69,6 +70,10 @@ type ServerConfig = {
   commandBlocks: boolean;
   onlineMode: boolean;
   spawnProtection: number;
+  /** UDP on the game port too (Plasmo Voice, server-list query). */
+  gamePortUdp: boolean;
+  /** Web maps, voice chat, and other plugin ports; see lib/ports.ts. */
+  extraPorts: ExtraPort[];
 };
 
 type CreateServerInput = ServerConfig & { eula: boolean };
@@ -136,7 +141,7 @@ let serverListCache: { at: number; value?: ServerSummary[]; pending?: Promise<Se
 let serverListGeneration = 0;
 const demoGlobal = globalThis as typeof globalThis & { __blockyDemo?: DemoState };
 
-const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[], gameMode: "survival" as const, pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: 16 };
+const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[], gameMode: "survival" as const, pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: 16, gamePortUdp: false, extraPorts: [] as ExtraPort[] };
 
 function demoState(): DemoState {
   demoGlobal.__blockyDemo ??= {
@@ -269,6 +274,8 @@ function metaFromLabels(labels: Record<string, string>): ServerMeta {
     commandBlocks: flag("commandBlocks", "enable-command-block", false),
     onlineMode: flag("onlineMode", "online-mode", true),
     spawnProtection: Number.isInteger(spawnProtection) && spawnProtection >= 0 ? Math.min(spawnProtection, 1000) : 16,
+    gamePortUdp: labels["panel.gamePortUdp"] === "true",
+    extraPorts: parseExtraPorts(labels["panel.extraPorts"]),
     createdAt: labels["panel.createdAt"] || new Date().toISOString(),
     dataPath: labels["panel.dataPath"],
   };
@@ -307,6 +314,8 @@ function labelsFor(meta: ServerMeta) {
     "panel.commandBlocks": String(meta.commandBlocks),
     "panel.onlineMode": String(meta.onlineMode),
     "panel.spawnProtection": String(meta.spawnProtection),
+    "panel.gamePortUdp": String(Boolean(meta.gamePortUdp)),
+    "panel.extraPorts": JSON.stringify(meta.extraPorts ?? []),
     "panel.createdAt": meta.createdAt,
     "panel.dataPath": meta.dataPath,
     // Only Minecraft is supported; the label lets the panel skip containers of other games.
@@ -334,6 +343,7 @@ function createOptions(meta: ServerMeta, rconPassword = randomBytes(24).toString
   if (meta.seed) env.push(`SEED=${meta.seed}`);
   const customProperties = customPropertiesWithoutManagedValues(meta.customProperties);
   if (customProperties) env.push(`CUSTOM_SERVER_PROPERTIES=${customProperties}`);
+  const ports = portBindings(meta);
   return {
     Image: image,
     name: containerName(meta),
@@ -341,10 +351,10 @@ function createOptions(meta: ServerMeta, rconPassword = randomBytes(24).toString
     OpenStdin: true,
     Labels: labelsFor(meta),
     Env: env,
-    ExposedPorts: { "25565/tcp": {} },
+    ExposedPorts: ports.ExposedPorts,
     HostConfig: {
       Binds: [`${meta.dataPath}:/data`],
-      PortBindings: { "25565/tcp": [{ HostPort: String(meta.port) }] },
+      PortBindings: ports.PortBindings,
       Memory: bytesFor(meta.memory),
       ...(meta.cpuLimit > 0 ? { NanoCpus: Math.round(meta.cpuLimit * 1e9) } : {}),
       PidsLimit: 4096,
@@ -421,7 +431,8 @@ async function readServerMeta(id: string): Promise<ServerMeta | undefined> {
     const stored = JSON.parse(await readFile(serverMetaPath(id), "utf8")) as Partial<ServerMeta> & { game?: string };
     if (stored.game !== undefined && stored.game !== "minecraft") return undefined;
     // Defaults (and gameplay settings still in custom properties) from a label-less read, then the saved values.
-    return { ...metaFromLabels({ "panel.customProperties": typeof stored.customProperties === "string" ? stored.customProperties : "" }), ...stored, id, dataPath: dockerServerDataPath(id) } as ServerMeta;
+    // Ports are re-read through the same checks as a label, never trusted as stored.
+    return { ...metaFromLabels({ "panel.customProperties": typeof stored.customProperties === "string" ? stored.customProperties : "" }), ...stored, gamePortUdp: stored.gamePortUdp === true, extraPorts: parseExtraPorts(JSON.stringify(stored.extraPorts ?? [])), id, dataPath: dockerServerDataPath(id) } as ServerMeta;
   } catch { return undefined; }
 }
 
@@ -659,15 +670,34 @@ export async function assertManagedServer(id: string) {
 }
 
 /** Rejects a host port that another managed server, or one being created, already uses. */
-async function assertPortAvailable(port: number, exceptId?: string) {
-  const others: { name: string; port: number }[] = [];
-  if (isDemo()) for (const server of demoState().servers) { if (server.id !== exceptId) others.push({ name: server.name, port: server.port }); }
+/** Host ports used by every other managed server (and ones being created) and by the panel itself. */
+export async function portsInUse(exceptId?: string) {
+  type Ported = Pick<ServerMeta, "name" | "port" | "gamePortUdp" | "extraPorts">;
+  const others: Ported[] = [];
+  const add = (server: Ported) => others.push({ name: server.name, port: server.port, gamePortUdp: server.gamePortUdp, extraPorts: server.extraPorts });
+  if (isDemo()) { for (const server of demoState().servers) if (server.id !== exceptId) add(server); }
   else {
-    for (const item of await managedContainers()) if (item.Labels?.["panel.id"] !== exceptId) { const meta = metaFromLabels(item.Labels); others.push({ name: meta.name, port: meta.port }); }
-    for (const server of pendingCreations.values()) if (server.id !== exceptId) others.push({ name: server.name, port: server.port });
+    for (const item of await managedContainers()) if (item.Labels?.["panel.id"] !== exceptId) add(metaFromLabels(item.Labels));
+    for (const server of pendingCreations.values()) if (server.id !== exceptId) add(server);
   }
-  const clash = others.find((other) => other.port === port);
-  if (clash) throw new ConflictError(`Port ${port} is already used by ${clash.name}.`);
+  return usedPorts(others);
+}
+
+/** Rejects a server whose game port or extra ports another server, or the panel, already uses. */
+async function assertPortsAvailable(server: Pick<ServerMeta, "port" | "gamePortUdp" | "extraPorts">, exceptId?: string, used?: Map<string, string>) {
+  const clash = portClash(server, used ?? await portsInUse(exceptId));
+  if (clash) throw new ConflictError(clash);
+}
+
+/**
+ * Opens ports for map and voice plugins on the server's Modrinth list that don't have one yet, so a
+ * plugin added from the Plugins tab works after the same restart. What happened goes in the activity log.
+ */
+async function withAutomaticPorts<T extends ServerConfig>(id: string, config: T, used: Map<string, string>) {
+  const result = withPluginPorts(config, used);
+  for (const entry of result.added) await recordEvent(id, "settings", `Opening port ${entry.port}${entry.protocol === "udp" ? " (UDP)" : ""} for ${entry.label}.`, "info");
+  for (const item of result.skipped) await recordEvent(id, "settings", item.reason, "warning");
+  return result.server;
 }
 
 async function provisionContainer(meta: ServerMeta, pending: ServerSummary) {
@@ -721,8 +751,11 @@ export async function createServer(input: CreateServerInput) {
     setTimeout(() => { server.status = "running"; server.health = "healthy"; server.statusMessage = "Ready for players"; server.cpuPercent = 7.2; server.memoryUsageMb = 1024; state.logs[id].push("[Server thread/INFO]: Done (3.219s)! For help, type \"help\""); }, 1800);
     return server;
   }
-  await assertPortAvailable(input.port);
   const id = randomUUID();
+  const used = await portsInUse();
+  const ported = await withAutomaticPorts(id, config, used);
+  await assertPortsAvailable(ported, undefined, used);
+  Object.assign(config, ported);
   const panelDataPath = serverDataPath(id);
   const meta: ServerMeta = { ...config, id, createdAt: new Date().toISOString(), dataPath: dockerServerDataPath(id) };
   await mkdir(panelDataPath, { recursive: true });
@@ -913,9 +946,9 @@ async function rerollUnlocked(info: ContainerInfo, oldMeta: ServerMeta, nextMeta
 
 /** What the Plugins/Mods tab needs to know about a server. */
 export async function modrinthServerConfig(id: string) {
-  if (isDemo()) { const server = demoServer(id); return { type: server.type, version: server.version, modrinthProjects: server.modrinthProjects || [] }; }
+  if (isDemo()) { const server = demoServer(id); return { type: server.type, version: server.version, modrinthProjects: server.modrinthProjects || [], port: server.port, gamePortUdp: server.gamePortUdp, extraPorts: server.extraPorts }; }
   const meta = metaFromLabels((await findInfo(id)).Labels);
-  return { type: meta.type, version: meta.version, modrinthProjects: meta.modrinthProjects };
+  return { type: meta.type, version: meta.version, modrinthProjects: meta.modrinthProjects, port: meta.port, gamePortUdp: meta.gamePortUdp, extraPorts: meta.extraPorts };
 }
 
 export async function updateServer(id: string, config: ServerConfig) {
@@ -927,16 +960,21 @@ export async function updateServer(id: string, config: ServerConfig) {
       await recordEvent(id, "settings", `Renamed from "${old}" to "${config.name}".`, "success");
       return { message: `Renamed to ${config.name}.`, renamed: true };
     }
+    const used = await portsInUse(id);
+    await assertPortsAvailable({ ...server, ...config }, id, used);
+    const next = await withAutomaticPorts(id, { ...server, ...config }, used);
     return demoOperation(id, "settings", "Applying settings", ["Taking a safety backup", "Recreating the container", "Waiting for Minecraft to start"], async () => {
-      Object.assign(server, config, { memoryLimitMb: Math.round(bytesFor(config.memory) / 1024 ** 2), statusMessage: "Ready for players" });
+      Object.assign(server, next, { memoryLimitMb: Math.round(bytesFor(config.memory) / 1024 ** 2), statusMessage: "Ready for players" });
       await recordEvent(id, "settings", "Configuration applied and health check passed.", "success");
     });
   }
   const info = await findInfo(id);
   const current = metaFromLabels(info.Labels);
   if (onlyNameChanged(current, { ...current, ...config })) return renameServer(info, current, config.name);
-  await assertPortAvailable(config.port, id);
-  return startServerOperation(id, "settings", "Applying settings", () => replaceServer(info, { ...current, ...config }, "settings"));
+  const used = await portsInUse(id);
+  await assertPortsAvailable({ ...current, ...config }, id, used);
+  const next = await withAutomaticPorts(id, { ...current, ...config }, used);
+  return startServerOperation(id, "settings", "Applying settings", () => replaceServer(info, next, "settings"));
 }
 
 export async function runServerAction(id: string, action: "start" | "stop" | "restart" | "backup" | "update") {
@@ -1157,7 +1195,7 @@ export async function adoptRestoredServer(id: string, stored: Record<string, unk
   if (!parsed.success) throw new Error(`Its saved settings aren't valid: ${parsed.error.issues[0]?.message || "unknown problem"}`);
   if ((await managedContainers()).some((item) => item.Labels?.["panel.id"] === id) || pendingCreations.has(id)) throw new ConflictError("It's already on this panel.");
   if (await lstat(serverRootPath(id)).catch(() => undefined) || await lstat(serverBackupPath(id)).catch(() => undefined)) throw new ConflictError("Its files are already on this panel, as a detached world. Reattach or delete it first.");
-  await assertPortAvailable(parsed.data.port);
+  await assertPortsAvailable(parsed.data);
   const createdAt = typeof stored.createdAt === "string" && !Number.isNaN(Date.parse(stored.createdAt)) ? stored.createdAt : new Date().toISOString();
   const meta: ServerMeta = { ...parsed.data, id, createdAt, dataPath: dockerServerDataPath(id) };
   const data = serverDataPath(id);
@@ -1276,7 +1314,7 @@ export async function reattachServer(id: string) {
   if ((await managedContainers()).some((item) => item.Labels?.["panel.id"] === id)) throw new ConflictError("This server already has a container.");
   const meta = await readServerMeta(id);
   if (!meta) throw new NotFoundError("No saved configuration exists for this world, so it cannot be reattached automatically.");
-  await assertPortAvailable(meta.port, id);
+  await assertPortsAvailable(meta, id);
   const pending = pendingSummary(meta, "Queued");
   pendingCreations.set(id, pending);
   invalidateServerList();

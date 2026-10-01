@@ -17,6 +17,7 @@ A Next.js (App Router) app that manages Minecraft servers as Docker containers, 
 | `lib/tasks.ts` | Scheduled tasks: when each runs next (time zones and daylight saving), missed runs, restart warnings. Run by `runScheduledTasks` in `lib/docker.ts`; stored per server in the control state. |
 | `lib/totp.ts` | Two-factor codes (RFC 6238) and recovery codes. The sign-in challenge and codes live in `lib/account-store.ts`. |
 | `lib/modrinth-core.ts`, `lib/modrinth.ts` | Plugin and mod search, and identifying installed jars by hash. The image does the installing (`MODRINTH_PROJECTS`). |
+| `lib/ports.ts` | Extra ports per server: presets for map and voice plugins, opening them automatically when a plugin is added, clash rules (never RCON), and Docker's port bindings. Pure and tested. |
 | `lib/world.ts` | Pure helpers for re-rolling a world (folder names, the seed line). |
 | `lib/account-store.ts` | Users, invites, reset links, sessions, and the account audit log in SQLite (`node:sqlite`). No Next.js imports, so tests run it on `:memory:`. |
 | `lib/auth.ts`, `lib/auth-server.ts`, `lib/session.ts`, `lib/passwords.ts` | Opening the account database, the signed-in user, session cookies, the recovery password, scrypt hashing. |

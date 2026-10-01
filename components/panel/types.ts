@@ -1,3 +1,5 @@
+import type { ExtraPort } from "@/lib/ports";
+
 export type ServerStatus = "running" | "starting" | "stopped" | "failed";
 export type ServerType = "PAPER" | "PURPUR" | "VANILLA" | "FABRIC" | "QUILT" | "FORGE" | "NEOFORGE";
 export type JavaVersion = "auto" | "25" | "21" | "17" | "11" | "8";
@@ -14,6 +16,10 @@ export type ServerConfig = {
   /** Modrinth project IDs the image installs into plugins/ or mods/ on start. */
   modrinthProjects: string[];
   gameMode: GameMode; pvp: boolean; hardcore: boolean; allowFlight: boolean; commandBlocks: boolean; onlineMode: boolean; spawnProtection: number;
+  /** UDP on the game port too (Plasmo Voice, server-list query). */
+  gamePortUdp: boolean;
+  /** Web maps, voice chat, and other plugin ports. */
+  extraPorts: ExtraPort[];
 };
 
 export type ActiveOperation = { kind: string; label: string; step?: string; startedAt: string; actor?: string };

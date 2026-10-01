@@ -179,6 +179,17 @@ Paper and Purpur servers get a **Plugins** tab, and Fabric, Quilt, Forge, and Ne
 
 Changing the server type or Minecraft version in Settings lists the plugins or mods that have no build for the new setup before you apply it.
 
+### Plugin ports
+
+Some plugins need a port of their own: a web map, voice chat, or Bedrock players through Geyser. Add them in **Settings → Network**. Each server's ports are opened on this machine when its settings are applied; nothing goes in `.env` or `compose.yaml`.
+
+- **BlueMap** (web map) and **Simple Voice Chat** have presets. Add either from the Plugins tab and its port opens in the same restart. BlueMap gets 8100, or the next free port if another server already has it, and its link shows on the server's overview. Voice chat must use the same port it announces to players (24454), so a second server with it needs another port set in `voicechat-server.properties`; the panel says so.
+- **Jars added by hand** through Files or SFTP are recognized too: Settings offers to open their port.
+- **"Also open the game port for UDP"** covers Plasmo Voice and the query protocol that server lists use for player counts.
+- **Other port** opens anything else, like Dynmap (8123), squaremap (8080), or Geyser (19132, UDP). The plugin must listen on the same port in its own config.
+
+Ports can't clash with another server's, or with the panel's own 3000 and 2022, and RCON (25575) is never published. Your router or firewall may also need the port opened.
+
 ## Backups
 
 Incremental backups use restic, installed in the panel image. Each server has an encrypted repository and a generated password file in its backup directory. Every snapshot is a complete, independently restorable copy of the world. Restic splits files into chunks and stores each chunk once, so a new snapshot only writes chunks that changed and reuses the rest. Deleting any snapshot, including the oldest, never affects the others. Its unique data is reclaimed at the next daily prune. The backup list shows each snapshot's full world size and how much new data it stored when it was taken. Downloading a snapshot exports a full `.tar` for portability.
