@@ -9,7 +9,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["dockerode"],
+  // Loaded from node_modules at runtime rather than bundled: both have optional native parts.
+  serverExternalPackages: ["dockerode", "ssh2"],
   // STORAGE_ROOT is resolved from an environment variable, so the tracer conservatively copies the
   // local storage directory (worlds, backups, restic passwords) into the build. Never ship it.
   outputFileTracingExcludes: { "**": ["./storage/**/*", "./panel/**/*", "./servers/**/*", "./backups/**/*", "./caddy/**/*", "./.env*"] },

@@ -10,4 +10,6 @@ export async function register() {
     }
   }
   await import("@/lib/scheduler");
+  const { startSftpServer } = await import("@/lib/sftp");
+  await startSftpServer().catch((error) => console.error("Blocky couldn't start its SFTP server", error));
 }

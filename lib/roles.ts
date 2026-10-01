@@ -41,6 +41,8 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/auth/password": { PUT: "viewer" },
   "/api/auth/two-factor": { GET: "viewer", POST: "viewer", DELETE: "viewer" },
   "/api/auth/sessions": { GET: "viewer", DELETE: "viewer" },
+  // SFTP keys and passwords. Files are admin-only, so SFTP is too.
+  "/api/auth/sftp": { GET: "admin", POST: "admin", DELETE: "admin" },
   "/api/users": { GET: "admin", POST: "admin" },
   "/api/users/[id]": { PATCH: "admin", DELETE: "admin", POST: "admin" },
   "/api/invites/[id]": { DELETE: "admin" },
@@ -108,6 +110,7 @@ export function capabilities(role: Role | undefined) {
     viewSettings: operator,
     manage: admin,           // create, delete, change settings, update image
     files: admin,
+    sftp: admin,             // SFTP keys and passwords (files are admin-only)
     restore: admin,          // restore, delete, download backups; schedule
     users: admin,
     offsite: admin,          // offsite backups: destination, passphrase, disaster recovery

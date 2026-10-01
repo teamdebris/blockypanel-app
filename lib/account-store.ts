@@ -20,6 +20,7 @@ export type User = { id: string; username: string; role: Role; createdAt: number
 export type Session = { id: string; userId: string | null; recovery: boolean; persistent: boolean; createdAt: number; lastSeenAt: number; expiresAt: number; userAgent: string; ip: string };
 type Invite = { id: string; kind: "invite" | "reset"; role: Role | null; userId: string | null; username?: string; createdBy: string; createdAt: number; expiresAt: number };
 type AuditEntry = { id: number; at: number; actor: string; message: string };
+export type SftpCredential = { id: string; kind: "key" | "password"; label: string; keyType: string | null; fingerprint: string | null; createdAt: number; lastUsedAt: number | null };
 
 const HOUR = 60 * 60 * 1000;
 export const SESSION_TTL = { persistent: 14 * 24 * HOUR, browser: 12 * HOUR, recovery: HOUR };
@@ -30,6 +31,7 @@ export const CHALLENGE_ATTEMPTS = 5;
 // last_seen_at is written at most this often, so polling doesn't turn every request into a write.
 const TOUCH_INTERVAL = 60 * 1000;
 const USERNAME = /^[a-zA-Z0-9_.-]{3,32}$/;
+export const SFTP_LIMITS = { keys: 10, passwords: 3 };
 
 type Row = Record<string, unknown>;
 
@@ -43,6 +45,16 @@ function toSession(row: Row): Session {
 
 function toInvite(row: Row): Invite {
   return { id: String(row.id), kind: row.kind as Invite["kind"], role: row.role == null ? null : row.role as Role, userId: row.user_id == null ? null : String(row.user_id), username: row.username == null ? undefined : String(row.username), createdBy: String(row.created_by), createdAt: Number(row.created_at), expiresAt: Number(row.expires_at) };
+}
+
+function toCredential(row: Row): SftpCredential {
+  return { id: String(row.id), kind: row.kind as SftpCredential["kind"], label: String(row.label), keyType: row.key_type == null ? null : String(row.key_type), fingerprint: row.fingerprint == null ? null : String(row.fingerprint), createdAt: Number(row.created_at), lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at) };
+}
+
+function assertLabel(label: string) {
+  const clean = label.trim();
+  if (!clean || clean.length > 60 || /[\u0000-\u001f]/.test(clean)) throw new AccountError(400, "Give it a name of up to 60 characters, like \"Laptop\".", "label");
+  return clean;
 }
 
 function assertUsername(username: string) {
@@ -133,6 +145,19 @@ export class AccountStore {
         attempts INTEGER NOT NULL DEFAULT 0,
         expires_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS sftp_credentials (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL,
+        key_type TEXT,
+        key_data TEXT,
+        fingerprint TEXT,
+        password_hash TEXT,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS sftp_credentials_key ON sftp_credentials(user_id, key_data) WHERE key_data IS NOT NULL;
     `);
   }
 
@@ -484,6 +509,80 @@ export class AccountStore {
       this.db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
       return user;
     });
+  }
+
+  // ---- SFTP credentials: SSH keys and generated passwords, never the account password ----
+  // The account password can't be used for SFTP: an SFTP client can't ask for a two-factor code,
+  // so it would let someone who learned the password skip two-factor sign-in.
+
+  listSftpCredentials(userId: string): SftpCredential[] {
+    return this.db.prepare("SELECT * FROM sftp_credentials WHERE user_id = ? ORDER BY created_at").all(userId).map(toCredential);
+  }
+
+  private countSftp(userId: string, kind: SftpCredential["kind"]) {
+    return Number((this.db.prepare("SELECT COUNT(*) AS n FROM sftp_credentials WHERE user_id = ? AND kind = ?").get(userId, kind) as { n: number }).n);
+  }
+
+  /** Adds a public key already parsed by lib/ssh-keys.ts. */
+  addSftpKey(userId: string, label: string, key: { type: string; data: string; fingerprint: string }) {
+    const name = assertLabel(label);
+    if (!this.getUser(userId)) throw new AccountError(404, "User not found.");
+    if (this.countSftp(userId, "key") >= SFTP_LIMITS.keys) throw new AccountError(409, `You can have up to ${SFTP_LIMITS.keys} SSH keys. Remove one first.`);
+    if (this.db.prepare("SELECT 1 FROM sftp_credentials WHERE user_id = ? AND key_data = ?").get(userId, key.data)) throw new AccountError(409, "That key is already added.", "publicKey");
+    const id = randomUUID();
+    this.db.prepare("INSERT INTO sftp_credentials (id, user_id, kind, label, key_type, key_data, fingerprint, created_at) VALUES (?, ?, 'key', ?, ?, ?, ?, ?)").run(id, userId, name, key.type, key.data, key.fingerprint, this.now());
+    return toCredential(this.db.prepare("SELECT * FROM sftp_credentials WHERE id = ?").get(id)!);
+  }
+
+  /** Generates an SFTP password, returned once; only its hash is kept. */
+  async addSftpPassword(userId: string, label: string) {
+    const name = assertLabel(label);
+    if (!this.getUser(userId)) throw new AccountError(404, "User not found.");
+    if (this.countSftp(userId, "password") >= SFTP_LIMITS.passwords) throw new AccountError(409, `You can have up to ${SFTP_LIMITS.passwords} SFTP passwords. Remove one first.`);
+    const password = newToken();
+    const hash = await hashPassword(password);
+    const id = randomUUID();
+    this.db.prepare("INSERT INTO sftp_credentials (id, user_id, kind, label, password_hash, created_at) VALUES (?, ?, 'password', ?, ?, ?)").run(id, userId, name, hash, this.now());
+    return { credential: toCredential(this.db.prepare("SELECT * FROM sftp_credentials WHERE id = ?").get(id)!), password };
+  }
+
+  deleteSftpCredential(userId: string, id: string) {
+    const row = this.db.prepare("SELECT * FROM sftp_credentials WHERE id = ? AND user_id = ?").get(id, userId);
+    if (!row) return undefined;
+    this.db.prepare("DELETE FROM sftp_credentials WHERE id = ?").run(id);
+    return toCredential(row);
+  }
+
+  /** The account an SFTP login names, when it may use SFTP at all: an active admin (files are admin-only). */
+  sftpAccount(username: string): User | undefined {
+    const row = this.db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+    if (!row) return undefined;
+    const user = toUser(row);
+    return user.role === "admin" && !user.disabled ? user : undefined;
+  }
+
+  /** The credential ID when `data` (a base64 key blob) is one of the user's keys. */
+  sftpKeyCredential(userId: string, data: string): string | undefined {
+    const row = this.db.prepare("SELECT id FROM sftp_credentials WHERE user_id = ? AND kind = 'key' AND key_data = ?").get(userId, data);
+    return row ? String(row.id) : undefined;
+  }
+
+  /** The credential ID when `password` matches one of the user's generated SFTP passwords. */
+  async sftpPasswordCredential(userId: string, password: string): Promise<string | undefined> {
+    const rows = this.db.prepare("SELECT id, password_hash FROM sftp_credentials WHERE user_id = ? AND kind = 'password'").all(userId);
+    if (!rows.length) { await verifyPassword(password, await unknownUserHash()); return undefined; }
+    for (const row of rows) if (await verifyPassword(password, String(row.password_hash))) return String(row.id);
+    return undefined;
+  }
+
+  /** Whether a signed-in SFTP session may continue: the credential still exists and its user is still an active admin. */
+  sftpCredentialActive(id: string) {
+    const row = this.db.prepare("SELECT users.role, users.disabled FROM sftp_credentials JOIN users ON users.id = sftp_credentials.user_id WHERE sftp_credentials.id = ?").get(id);
+    return Boolean(row && row.role === "admin" && !row.disabled);
+  }
+
+  touchSftpCredential(id: string) {
+    this.db.prepare("UPDATE sftp_credentials SET last_used_at = ? WHERE id = ?").run(this.now(), id);
   }
 
   // ---- Panel settings (JSON values, e.g. offsite backups) ----

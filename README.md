@@ -36,6 +36,7 @@ A self-hosted control panel for Minecraft servers on Docker, built on [`itzg/min
 - Create, download, restore, and delete incremental, deduplicated backups
 - Scheduled backups with per-kind retention, retry backoff, weekly integrity checks, and offsite copies set up from the panel
 - Browse, upload, edit, download, create, and delete files within each server's data directory, and unpack .zip, .tar, and .tar.gz archives
+- SFTP for server files (FileZilla, WinSCP, Cyberduck) with SSH keys or generated passwords, confined to each server's data folder
 - Import a world from a .zip (singleplayer or another host) with a safety backup and automatic rollback
 - Back up before updates and settings changes, verify health, and roll back automatically on failure
 - Long operations (provisioning, updates, restores, backups) run in the background with live progress, and only one runs per server at a time
@@ -150,6 +151,18 @@ For extra protection against password guessing, you can rate-limit `/api/auth/` 
 - Accounts live in `panel/panel.db` (SQLite). It isn't part of world backups; if it's lost, use recovery sign-in to set up again and re-invite people.
 - The last admin can't be demoted, disabled, or deleted, and nobody can change their own role.
 
+## SFTP
+
+Admins can open a server's files in any SFTP app. Under **Your account → SFTP access**, add an SSH key (the contents of your `.pub` file) or create an SFTP password; either asks for your account password first. Then use the details from the server's **Files → SFTP** button:
+
+- **Host:** the panel's machine. **Port:** `2022` (`BLOCKY_SFTP_PORT`).
+- **Username:** `<your username>.<server ID>`, for example `alex.953dfb01`. The first 8 characters of the ID are enough.
+- **Host key:** check that your app shows the fingerprint listed in the panel the first time you connect.
+
+You land in that server's data folder and can't leave it. Links in it are never followed or listed, the same as in Files. Your account password never works for SFTP, because an SFTP app can't ask for a two-factor code. Removing a key or password, or taking away someone's admin role, ends their SFTP sessions within a few seconds. Each session that changed files adds one entry to the server's activity, and sign-ins appear in the account log.
+
+The SFTP port follows `BLOCKY_BIND_ADDRESS`. It's encrypted, so if the web panel sits behind a proxy on `127.0.0.1` you can still offer SFTP with `BLOCKY_SFTP_BIND_ADDRESS=0.0.0.0`. Set `BLOCKY_SFTP=false` to turn it off. Installs from before 0.2 need the new `ports:` line from the current `compose.yaml`.
+
 ## Scheduled tasks
 
 Each server's **Schedule** tab runs things on their own: a **restart** (players online get countdown messages in chat first, 5 minutes by default), a **console command**, or a **chat message**. Tasks run daily at a time, on every day or chosen weekdays, in your browser's time zone and correct across daylight-saving changes, or every few hours. Stopped servers are left alone. A daily run the panel missed while it was down is skipped rather than run hours late. Everyone can see the schedule; admins manage it.
@@ -199,7 +212,7 @@ Set `BLOCKY_WEBHOOK_URL` to a Discord webhook (or any endpoint accepting `{"cont
 ```text
 /opt/blocky-panel/                   # BLOCKY_HOST_STORAGE
 ├── compose.yaml, .env               # your install (when the data lives next to it)
-├── panel/panel.db                   # user accounts, sessions, and offsite backup settings (SQLite)
+├── panel/panel.db                   # user accounts, sessions, SFTP keys, the SFTP host key, and offsite settings (SQLite)
 ├── panel/control-state.json         # backup policies, schedule state, and operation history
 ├── panel/control-state.json.bak     # previous copy, used automatically if the main file is damaged
 ├── panel/cache/restic/              # restic metadata cache (safe to delete)

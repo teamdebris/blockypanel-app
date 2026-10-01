@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ROLE_DESCRIPTIONS } from "@/lib/roles";
 import { PageHeading, Section } from "./common";
+import { SftpSection } from "./sftp-access";
 import { TwoFactorSection } from "./two-factor";
 import { api, ApiError, errorMessage, formatRelative } from "./lib";
 import { useNow, usePanel } from "./panel-context";
@@ -103,6 +104,7 @@ export function AccountPage() {
     <Section title="Two-factor sign-in" description="A code from your phone, on top of your password.">
       {me.demo ? <DemoTwoFactor /> : <TwoFactorSection />}
     </Section>
+    {me.role === "admin" && !me.demo && <Section title="SFTP access" description="SSH keys and passwords for opening server files in an SFTP app. Admins only, like Files."><SftpSection /></Section>}
     <Section title="Where you're signed in" description={"Sign out any device you don't recognize, then change your password."}><Sessions /></Section>
   </div>;
 }
