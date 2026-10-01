@@ -68,6 +68,8 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/servers/[id]/tasks": { GET: "viewer", POST: "admin" },
   "/api/servers/[id]/tasks/[taskId]": { PATCH: "admin", DELETE: "admin", POST: "admin" },
   "/api/servers/[id]/modrinth": { GET: "viewer" },
+  // Map and voice plugins whose port isn't open yet, for the Settings tab (which operators can view).
+  "/api/servers/[id]/ports": { GET: "operator" },
   // Searching and compatibility checks serve installing, which is admin-only (a plugin is code on the server).
   "/api/servers/[id]/modrinth/search": { GET: "admin" },
   "/api/servers/[id]/modrinth/compatibility": { GET: "admin" },

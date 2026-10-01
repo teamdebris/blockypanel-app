@@ -3,7 +3,7 @@ import { modrinthServerConfig } from "@/lib/docker";
 import { incompatibleProjects } from "@/lib/modrinth";
 import { assertServerId } from "@/lib/paths";
 import { apiError } from "@/lib/responses";
-import { updateServerSchema } from "@/lib/validation";
+import { serverFields } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -11,9 +11,8 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const server = await modrinthServerConfig(assertServerId((await context.params).id));
-    const shape = updateServerSchema.innerType().innerType().shape;
-    const type = shape.type.parse(request.nextUrl.searchParams.get("type") || server.type);
-    const version = shape.version.parse(request.nextUrl.searchParams.get("version") || server.version);
+    const type = serverFields.type.parse(request.nextUrl.searchParams.get("type") || server.type);
+    const version = serverFields.version.parse(request.nextUrl.searchParams.get("version") || server.version);
     return NextResponse.json({ incompatible: await incompatibleProjects(server.modrinthProjects, type, version) });
   } catch (error) { return apiError(error); }
 }

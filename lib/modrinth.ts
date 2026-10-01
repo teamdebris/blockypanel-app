@@ -138,6 +138,16 @@ async function jarsIn(serverId: string, folder: string) {
   } finally { await directory.close(); }
 }
 
+/** Jar file names in plugins/ or mods/, without reading them. Links are skipped, as everywhere in data/. */
+export async function jarFileNames(serverId: string, folder: string) {
+  const directory = await anchorDirectory(serverDataPath(serverId), folder).catch(() => undefined);
+  if (!directory) return [];
+  try {
+    const entries = await readdir(directory.path, { withFileTypes: true }).catch(() => []);
+    return entries.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".jar")).map((entry) => entry.name).slice(0, 500);
+  } finally { await directory.close(); }
+}
+
 // Everyone who opens the tab triggers these lookups; cache them so polling can't get the panel
 // rate-limited by Modrinth.
 const versionCache = new Map<string, { at: number; value: [Record<string, ApiVersion>, Record<string, ApiVersion>] }>();

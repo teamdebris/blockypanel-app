@@ -55,7 +55,7 @@ export const initialForm: ServerForm = {
   maxPlayers: "20", whitelist: "", seed: "", motd: "A Minecraft Server powered by Blocky", customProperties: "",
   initialMemoryPercent: "25", maxMemoryPercent: "75", rollingLogMaxFiles: "30", viewDistance: "8", simulationDistance: "6",
   stopAnnounceDelaySeconds: "10", useMeowiceFlags: true, pauseWhenEmptySeconds: "300", modrinthProjects: [], eula: false,
-  gameMode: "survival", pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: "16",
+  gameMode: "survival", pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: "16", gamePortUdp: false, extraPorts: [],
 };
 
 export function toPayload(form: ServerForm): ServerConfig & { eula?: boolean } {
@@ -81,6 +81,7 @@ export function fromServer(server: MinecraftServer): ServerForm {
     modrinthProjects: server.modrinthProjects || [],
     gameMode: server.gameMode || "survival", pvp: server.pvp ?? true, hardcore: server.hardcore ?? false, allowFlight: server.allowFlight ?? false,
     commandBlocks: server.commandBlocks ?? false, onlineMode: server.onlineMode ?? true, spawnProtection: String(server.spawnProtection ?? 16),
+    gamePortUdp: server.gamePortUdp ?? false, extraPorts: server.extraPorts ?? [],
   };
 }
 
@@ -91,19 +92,26 @@ const fieldLabels: Partial<Record<keyof ServerForm, string>> = {
   viewDistance: "View distance", simulationDistance: "Simulation distance", stopAnnounceDelaySeconds: "Shutdown warning",
   useMeowiceFlags: "Optimized JVM flags", pauseWhenEmptySeconds: "Pause when empty", modrinthProjects: "Plugins and mods",
   gameMode: "Game mode", pvp: "PvP", hardcore: "Hardcore", allowFlight: "Allow flight", commandBlocks: "Command blocks", onlineMode: "Online mode", spawnProtection: "Spawn protection",
+  gamePortUdp: "Game port over UDP", extraPorts: "Extra ports",
 };
+
+function comparable(value: unknown) {
+  return value !== null && typeof value === "object" ? JSON.stringify(value) : String(value ?? "").trim();
+}
 
 /** Human-readable list of settings that differ between two forms, for the apply confirmation. */
 export function formChanges(before: ServerForm, after: ServerForm) {
   const show = (key: keyof ServerForm, value: unknown) => {
     if (typeof value === "boolean") return value ? "On" : "Off";
+    if (key === "extraPorts") return (value as { port: number; protocol: string }[]).map((entry) => `${entry.port}${entry.protocol === "udp" ? "/UDP" : ""}`).join(", ") || "(none)";
     if (Array.isArray(value)) return `${value.length} installed`;
     if (key === "pauseWhenEmptySeconds") return value === "-1" ? "Never" : `${value}s`;
     const text = String(value ?? "").trim();
     return text.length > 40 ? `${text.slice(0, 37)}…` : text || "(empty)";
   };
   return (Object.keys(fieldLabels) as (keyof ServerForm)[])
-    .filter((key) => String(before[key] ?? "").trim() !== String(after[key] ?? "").trim())
+    // Lists of objects (extra ports) compare by content; String() would make every list look alike.
+    .filter((key) => comparable(before[key]) !== comparable(after[key]))
     .map((key) => ({ key, label: fieldLabels[key]!, from: show(key, before[key]), to: show(key, after[key]) }));
 }
 
