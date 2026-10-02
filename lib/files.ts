@@ -253,7 +253,14 @@ export async function writeServerTextFile(id: string, requested: string, content
   await recordEvent(id, "file-write", `File ${relative} was saved.`, "info");
 }
 
-export async function uploadServerFile(id: string, requested: string, body: ReadableStream<Uint8Array>) {
+/** An upload that ended at a different length than the browser announced: never keep a partial file. */
+function sizeMismatch(received: number, expected: number) {
+  return new BadRequestError(received < expected
+    ? `The upload was cut short (${received} of ${expected} bytes arrived). Nothing was saved; try again.`
+    : `The upload was longer than expected (${received} bytes, not ${expected}). Nothing was saved.`);
+}
+
+export async function uploadServerFile(id: string, requested: string, body: ReadableStream<Uint8Array>, expectedBytes: number) {
   const relative = cleanRelativePath(requested);
   if (!relative) throw new BadRequestError("Choose a file to upload.");
   if (process.env.BLOCKY_DEMO === "true") {
@@ -268,6 +275,7 @@ export async function uploadServerFile(id: string, requested: string, body: Read
       chunks.push(Buffer.from(chunk));
     }
     const content = Buffer.concat(chunks);
+    if (content.length !== expectedBytes) throw sizeMismatch(content.length, expectedBytes);
     assertDemoBudget(nodes, relative, content.length);
     nodes.set(relative, { type: "file", content, modifiedAt: new Date().toISOString() });
   } else {
@@ -281,6 +289,7 @@ export async function uploadServerFile(id: string, requested: string, body: Read
       const limiter = new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > MAX_UPLOAD_BYTES ? new BadRequestError("Uploads are limited to 4 GB.") : null, chunk); } });
       try {
         await pipeline(Readable.from(webStreamChunks(body)), limiter, createWriteStream(temporary, { flags: "wx", mode: 0o660 }));
+        if (bytes !== expectedBytes) throw sizeMismatch(bytes, expectedBytes);
         // rename replaces a final symlink without following it; the parent stays pinned throughout.
         await lchown(temporary, 1000, 1000).catch(() => undefined);
         await rename(temporary, target);

@@ -22,7 +22,7 @@ A Next.js (App Router) app that manages Minecraft servers as Docker containers, 
 | `lib/account-store.ts` | Users, invites, reset links, sessions, and the account audit log in SQLite (`node:sqlite`). No Next.js imports, so tests run it on `:memory:`. |
 | `lib/auth.ts`, `lib/auth-server.ts`, `lib/session.ts`, `lib/passwords.ts` | Opening the account database, the signed-in user, session cookies, the recovery password, scrypt hashing. |
 | `lib/roles.ts` | Roles and `API_ACCESS`: every API route and method with its minimum role. |
-| `proxy.ts` | Runs before every request: origin and CSRF-header checks, then the permission table; redirects to `/setup` until an admin exists. |
+| `proxy.ts`, `lib/request-guard.ts` | Runs before every request: origin and CSRF-header checks, then the permission table; redirects to `/setup` until an admin exists. Uploads under `/api/uploads/` skip the proxy, which would buffer at most 10 MB of a body, and call the same checks from `lib/request-guard.ts` themselves (`tests/uploads.test.ts` enforces it). |
 | `lib/rate-limit.ts` | Sign-in throttling. |
 | `lib/store.ts` | `panel/control-state.json`: backup schedules, schedule health, and the per-server activity log. |
 | `lib/operations.ts` | Background operations with one lock per server, and their progress shown in the UI. |

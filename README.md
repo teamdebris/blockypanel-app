@@ -127,6 +127,9 @@ server {
         # The live console is a long-lived event stream.
         proxy_buffering off;
         proxy_read_timeout 1h;
+        # Uploads can be up to 4 GB; nginx refuses anything over 1 MB by default.
+        client_max_body_size 4g;
+        proxy_request_buffering off;
     }
 }
 ```
