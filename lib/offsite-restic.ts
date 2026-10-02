@@ -82,6 +82,11 @@ export async function repositoryExists(runner: Runner, repository: string, passw
 const ACCESS_PROBLEM = /access denied|forbidden|signature|permission denied|invalidaccesskey|unauthori[sz]ed|authentication/i;
 const MISSING = /no such file|does not exist|not found|nosuchkey|nosuchbucket/i;
 
+/** Whether the destination refused the credentials, as opposed to any other failure. */
+export function isAccessProblem(error: unknown) {
+  return error instanceof Error && ACCESS_PROBLEM.test(error.message);
+}
+
 export function isNoRepository(error: unknown) {
   if (!(error instanceof ResticError)) return false;
   if (ACCESS_PROBLEM.test(error.message)) return false;
