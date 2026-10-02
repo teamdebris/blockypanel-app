@@ -19,7 +19,7 @@ export function ServerCard({ server }: { server: MinecraftServer }) {
       <StatusPill server={server} />
     </div>
     <div className="space-y-2 px-4 pb-3">
-      <CopyAddress port={server.port} compact />
+      <CopyAddress port={server.port} serverId={server.id} compact />
       {server.operation ? <p className="flex items-center gap-1.5 text-xs text-warning"><LoaderCircle className="size-3.5 animate-spin" />{server.operation.step || server.operation.label}…</p>
         : failed ? <p className="line-clamp-2 text-xs text-destructive">{server.statusMessage}</p> : null}
     </div>

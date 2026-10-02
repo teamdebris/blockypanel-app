@@ -14,10 +14,14 @@ export type S3Provider = "b2" | "r2" | "wasabi" | "aws" | "minio" | "other";
 export type OffsiteDestination =
   | { kind: "s3"; provider: S3Provider; endpoint: string; region: string; bucket: string; prefix: string; accessKeyId: string; secretAccessKey?: string }
   | { kind: "folder"; path: string }
-  | { kind: "sftp"; host: string; port: number; user: string; path: string; auth: "password" | "key"; password?: string; privateKey?: string; publicKey?: string; hostKey?: string; hostFingerprints?: string[] };
+  | { kind: "sftp"; host: string; port: number; user: string; path: string; auth: "password" | "key"; password?: string; privateKey?: string; publicKey?: string; hostKey?: string; hostFingerprints?: string[] }
+  /** Blocky Cloud: a B2 bucket run by the console. Its keys come from the console when needed (lib/cloud.ts). */
+  /** `panel` names another panel's folder in the account (for restoring on a new machine); this panel's own by default. */
+  | { kind: "cloud"; panel?: string };
 
 /** One line naming a destination, e.g. "Backblaze B2 · my-worlds/blocky". */
 export function describeDestination(destination: OffsiteDestination) {
+  if (destination.kind === "cloud") return destination.panel ? `Blocky Cloud · panel ${destination.panel.slice(0, 8)}` : "Blocky Cloud";
   if (destination.kind === "folder") return `Folder ${destination.path}`;
   if (destination.kind === "sftp") return `SFTP ${destination.user}@${destination.host}${destination.port === 22 ? "" : `:${destination.port}`}:${destination.path}`;
   const provider = S3_PROVIDERS.find((item) => item.value === destination.provider)?.label || "S3";
@@ -54,6 +58,7 @@ function joinPath(...parts: string[]) {
  */
 export function repositoryFor(destination: OffsiteDestination, part: "index" | { server: string }, folderRoot?: string) {
   const sub = part === "index" ? "index" : joinPath("servers", part.server);
+  if (destination.kind === "cloud") throw new Error("A Blocky Cloud destination has to be resolved to its bucket first.");
   if (destination.kind === "s3") {
     const endpoint = s3Endpoint(destination);
     const base = /^https?:\/\//.test(endpoint) ? endpoint : `https://${endpoint}`;

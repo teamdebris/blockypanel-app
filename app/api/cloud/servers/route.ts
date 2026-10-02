@@ -1,0 +1,13 @@
+import { NextResponse } from "next/server";
+import { setServerPublished } from "@/lib/cloud";
+import { apiError } from "@/lib/responses";
+import { cloudServerSchema } from "@/lib/validation";
+
+export const runtime = "nodejs";
+/** Publishes a server on blockylink.net, or takes it off (a backend behind a proxy, an archived world). */
+export async function PATCH(request: Request) {
+  try {
+    const { serverId, publish } = cloudServerSchema.parse(await request.json());
+    return NextResponse.json(await setServerPublished(serverId, publish));
+  } catch (error) { return apiError(error); }
+}

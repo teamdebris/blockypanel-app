@@ -203,6 +203,11 @@ async function sftpRunner(destination: Extract<OffsiteDestination, { kind: "sftp
 // ---- Targets ----
 
 export async function targetFor(destination: OffsiteDestination): Promise<Target> {
+  // Blocky Cloud is a B2 bucket whose key comes from the console, fetched (or renewed) right now.
+  if (destination.kind === "cloud") {
+    const { cloudBackupDestination } = await import("@/lib/cloud");
+    return targetFor(await cloudBackupDestination(destination.panel));
+  }
   let runner: Runner;
   let folderRoot: string | undefined;
   if (destination.kind === "s3") {

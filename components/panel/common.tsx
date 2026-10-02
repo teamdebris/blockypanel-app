@@ -29,10 +29,12 @@ export function StatusPill({ server, className }: { server: MinecraftServer; cla
   </span>;
 }
 
-export function CopyAddress({ port, compact = false, className, minecraft = true }: { port: number; compact?: boolean; className?: string; minecraft?: boolean }) {
+export function CopyAddress({ port, serverId, compact = false, className, minecraft = true }: { port: number; serverId?: string; compact?: boolean; className?: string; minecraft?: boolean }) {
   const { system } = usePanel();
   const [copied, setCopied] = useState(false);
-  const address = serverAddress(port, system?.publicHost, minecraft);
+  // A blockylink.net name (an SRV record, so no port) when Blocky Cloud has one for this server.
+  const cloud = minecraft && serverId ? system?.cloudAddresses?.[serverId] : undefined;
+  const address = cloud || serverAddress(port, system?.publicHost, minecraft);
   async function copy(event: React.MouseEvent) {
     event.preventDefault(); event.stopPropagation();
     try {

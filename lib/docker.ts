@@ -588,15 +588,17 @@ function withOperations<T extends ServerSummary>(summary: T): T {
 
 export async function getSystem() {
   const offsiteBackups = Boolean(await offsiteSettings().catch(() => undefined));
+  // blockylink.net addresses from the last Blocky Cloud check-in, by server ID. Loaded lazily: lib/cloud imports this file.
+  const cloudAddresses = await import("@/lib/cloud").then((cloud) => cloud.cloudServerAddresses()).catch(() => ({}));
   if (isDemo()) {
     const state = demoState();
-    return { dockerAvailable: true, dockerVersion: "28.3.2", serverCount: state.servers.length, runningCount: state.servers.filter((server) => server.status === "running").length, offsiteBackups, publicHost: PUBLIC_HOST };
+    return { dockerAvailable: true, dockerVersion: "28.3.2", serverCount: state.servers.length, runningCount: state.servers.filter((server) => server.status === "running").length, offsiteBackups, publicHost: PUBLIC_HOST, cloudAddresses };
   }
   try {
     const [version, items] = await Promise.all([timed(docker.version(), "the version check"), managedContainers()]);
-    return { dockerAvailable: true, dockerVersion: version.Version, serverCount: items.length, runningCount: items.filter((item) => item.State === "running").length, offsiteBackups, publicHost: PUBLIC_HOST };
+    return { dockerAvailable: true, dockerVersion: version.Version, serverCount: items.length, runningCount: items.filter((item) => item.State === "running").length, offsiteBackups, publicHost: PUBLIC_HOST, cloudAddresses };
   } catch (error) {
-    return { dockerAvailable: false, runningCount: 0, serverCount: 0, offsiteBackups, publicHost: PUBLIC_HOST, error: error instanceof Error ? error.message : "Docker is unavailable." };
+    return { dockerAvailable: false, runningCount: 0, serverCount: 0, offsiteBackups, publicHost: PUBLIC_HOST, cloudAddresses, error: error instanceof Error ? error.message : "Docker is unavailable." };
   }
 }
 
