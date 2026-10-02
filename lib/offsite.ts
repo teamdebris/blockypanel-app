@@ -113,7 +113,13 @@ function publicDestination(destination: OffsiteDestination) {
 function destinationError(error: unknown) {
   const message = describe(error);
   const friendly = friendlyDestinationError(message);
-  if (friendly) return new BadRequestError(friendly.message, friendly.field);
+  if (friendly) {
+    // The plain explanation first, then what the destination actually said (secrets are already
+    // scrubbed by the runner), so a refusal can be told apart from, say, a wrong region.
+    console.error("Blocky offsite destination error:", message);
+    const detail = message.replace(/\s+/g, " ").trim().slice(0, 300);
+    return new BadRequestError(detail ? `${friendly.message} Details: ${detail}` : friendly.message, friendly.field);
+  }
   if (error instanceof BadRequestError) return error;
   return new BadRequestError(`Couldn't use the destination: ${message}`);
 }
