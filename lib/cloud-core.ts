@@ -91,7 +91,7 @@ export function versionAtLeast(version: string, minimum: string) {
 
 /**
  * The blockylink.net address for each server, from the last check-in. A server gets one only while
- * its name publishes (live, or frozen at the last address after a subscription ends).
+ * its name publishes (live, or frozen at the last address when a subscription ends and the name is beyond the free plan).
  */
 export function cloudAddresses(checkin: CheckinResponse | undefined) {
   const addresses: Record<string, string> = {};
@@ -196,5 +196,5 @@ export function parseCredentials(value: unknown): BackupCredentials {
   return credentials;
 }
 
-export const subscriptionLabels: Record<SubscriptionState, string> = { none: "No subscription", active: "Active", grace: "Payment failing", lapsed: "Ended" };
+export const subscriptionLabels: Record<SubscriptionState, string> = { none: "Free plan", active: "Active", grace: "Payment failing", lapsed: "Free plan (subscription ended)" };
 export const nameStateLabels: Record<NameState, string> = { active: "Live", frozen: "Frozen", reserved: "Held", suspended: "Suspended" };

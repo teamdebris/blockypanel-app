@@ -241,12 +241,12 @@ export async function setServerPublished(serverId: string, publish: boolean) {
 
 async function freshCredentials(state: CloudState): Promise<BackupCredentials> {
   if (!state.token) throw new BadRequestError("This panel isn't linked to Blocky Cloud. Link it on the Blocky Cloud page first.");
-  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
+  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("Cloud backup isn't part of the free plan. Subscribe to Standard at cloud.blockypanel.com to use it.");
   if (!needsNewCredentials(state.credentials, state.checkin?.backup)) return state.credentials!;
   let body: unknown;
   try { body = (await call<unknown>("/backup/credentials", { token: state.token })).body; }
   catch (error) {
-    if (error instanceof CloudError && error.status === 403) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
+    if (error instanceof CloudError && error.status === 403) throw new BadRequestError("Cloud backup isn't part of the free plan. Subscribe to Standard at cloud.blockypanel.com to use it.");
     throw error;
   }
   const credentials = parseCredentials(body);

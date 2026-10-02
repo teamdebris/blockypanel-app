@@ -105,7 +105,7 @@ function AccountCard({ overview, onChanged }: { overview: Enabled; onChanged: ()
         {overview.lastError && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{overview.lastError}</p>}
         {overview.outdated && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">This panel is older than Blocky Cloud supports. Update it to keep your names and backups working.</p>}
         {overview.notices.map((notice, index) => <p key={index} className={cn("rounded-lg border px-3 py-2 text-xs", notice.level === "error" ? tone.bad : notice.level === "warning" ? tone.warn : tone.muted)}>{notice.message}</p>)}
-        {!subscription || subscription.state === "none" ? <p className="text-xs text-muted-foreground">Names and cloud backup come with a subscription. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
+        {subscription && subscription.state !== "active" && subscription.state !== "grace" ? <p className="text-xs text-muted-foreground">The free plan includes one name with one server address. Standard adds more server addresses and cloud backup. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
         <div className="border-t border-border pt-3">
           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmUnlink(true)}><Unlink />Unlink this panel</Button>
         </div>
@@ -135,7 +135,7 @@ function NamesCard({ overview }: { overview: Enabled }) {
             <span className="text-xs text-muted-foreground">port {server.port}</span>
           </li>)}
         </ul> : <p className="text-xs text-muted-foreground">{overview.unpublished.length ? "No published servers. Turn one on below." : "No servers yet. They're added at the next check-in."}</p>}
-        {name.state === "frozen" && <p className="text-xs text-warning">Frozen: the subscription ended, so this name stays at its last address and won&apos;t follow IP changes.</p>}
+        {name.state === "frozen" && <p className="text-xs text-warning">Frozen: the subscription ended and the free plan covers one name, so this one stays at its last address and won&apos;t follow IP changes.</p>}
       </div>)}</div>}
     <p className="mt-4 text-xs text-muted-foreground">Game ports still need to be forwarded on your router. The name only finds this machine.</p>
   </Section>;
@@ -176,7 +176,7 @@ function BackupCard({ overview }: { overview: Enabled }) {
   const backup = overview.backup;
   return <Section title="Blocky Cloud backup" description="Off-site copies, encrypted on this machine before upload."
     actions={<Button size="sm" variant="outline" asChild><Link href="/backups"><CloudUpload />Offsite backups</Link></Button>}>
-    {!backup?.available ? <p className="text-sm text-muted-foreground">Cloud backup comes with a subscription.</p> : <div className="space-y-3 text-sm">
+    {!backup?.available ? <p className="text-sm text-muted-foreground">Cloud backup comes with Blocky Cloud Standard. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : <div className="space-y-3 text-sm">
       <div className="flex items-baseline justify-between gap-2"><span className="font-medium">{formatBytes(backup.usedBytes)} used</span><span className="text-xs text-muted-foreground">of {formatBytes(backup.quotaBytes)}</span></div>
       <UsageBar value={backup.usedBytes} max={backup.quotaBytes} label="Blocky Cloud storage used" />
       {backup.readOnly && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">Read-only: restores work, but new copies can&apos;t upload until there&apos;s room or the subscription is active again.</p>}
