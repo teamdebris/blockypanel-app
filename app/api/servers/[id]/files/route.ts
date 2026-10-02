@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
-import { createServerDirectory, deleteServerFile, extractServerArchive, listServerFiles, readServerTextFile, renameServerFile, serverFileForDownload, uploadServerFile, writeServerTextFile } from "@/lib/files";
-import { BadRequestError } from "@/lib/errors";
+import { createServerDirectory, deleteServerFile, extractServerArchive, listServerFiles, readServerTextFile, renameServerFile, serverFileForDownload, writeServerTextFile } from "@/lib/files";
 import { apiError } from "@/lib/responses";
 import { fileDirectorySchema, filePathSchema, fileRenameSchema, fileWriteSchema } from "@/lib/validation";
 
@@ -46,15 +45,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const { path, content } = fileWriteSchema.parse(await request.json());
     await writeServerTextFile((await context.params).id, path, content);
-    return NextResponse.json({ ok: true });
-  } catch (error) { return apiError(error); }
-}
-
-export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    if (!request.body) throw new BadRequestError("Upload body is empty.");
-    const requested = filePathSchema.min(1).parse(new URL(request.url).searchParams.get("path") || "");
-    await uploadServerFile((await context.params).id, requested, request.body);
     return NextResponse.json({ ok: true });
   } catch (error) { return apiError(error); }
 }

@@ -142,7 +142,7 @@ export function FilesTab({ server }: { server: MinecraftServer }) {
     setUploads(files.map((file) => ({ name: file.name, loaded: 0, total: file.size })));
     let failed = 0;
     for (const [index, file] of files.entries()) {
-      try { await uploadFile(endpoint(joined(file.name)), file, (loaded) => setUploads((current) => current.map((item, i) => i === index ? { ...item, loaded } : item))); }
+      try { await uploadFile(`/api/uploads/servers/${server.id}?${new URLSearchParams({ path: joined(file.name), size: String(file.size) })}`, file, (loaded) => setUploads((current) => current.map((item, i) => i === index ? { ...item, loaded } : item))); }
       catch (error) { failed += 1; toast.error(`${file.name}: ${errorMessage(error, "upload failed")}`); }
     }
     setUploads([]);
