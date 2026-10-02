@@ -61,7 +61,9 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   // Dismisses the "scheduled backups are failing" warning. Listed before [name], which would match it otherwise.
   "/api/servers/[id]/backups/failures": { DELETE: "operator" },
   "/api/servers/[id]/backups/[name]": { GET: "admin", DELETE: "admin" },
-  "/api/servers/[id]/files": { GET: "admin", POST: "admin", PATCH: "admin", PUT: "admin", DELETE: "admin" },
+  "/api/servers/[id]/files": { GET: "admin", POST: "admin", PATCH: "admin", DELETE: "admin" },
+  // Uploads stream past proxy.ts (it would cut bodies off at 10 MB); the route applies this entry itself.
+  "/api/uploads/servers/[id]": { PUT: "admin" },
   "/api/servers/[id]/reroll": { POST: "admin" },
   "/api/servers/[id]/world": { POST: "admin" },
   // Anyone can see the schedule; creating, changing, and running tasks is admin-only.
