@@ -122,7 +122,7 @@ export function ServerPage({ serverId, tab }: { serverId: string; tab: ServerTab
             {me && !can.control && <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">View only</span>}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <CopyAddress port={server.port} />
+            <CopyAddress port={server.port} serverId={server.id} />
             <span>{serverKind(server)} · {server.memory.replace("G", " GB")} · {server.playersOnline}/{server.maxPlayers} players</span>
           </div>
         </div>

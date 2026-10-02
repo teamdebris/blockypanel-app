@@ -65,7 +65,7 @@ export function ServerMenu({ server, inHeader = false }: { server: MinecraftServ
   const [pending, setPending] = useState<Pending>(null);
   const busy = Boolean(server.operation);
   async function copyAddress() {
-    const address = serverAddress(server.port, system?.publicHost);
+    const address = system?.cloudAddresses?.[server.id] || serverAddress(server.port, system?.publicHost);
     try { await navigator.clipboard.writeText(address); toast.success("Address copied", { description: address }); }
     catch { toast.error("Couldn't copy the address."); }
   }

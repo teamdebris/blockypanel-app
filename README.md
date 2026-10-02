@@ -205,6 +205,7 @@ Admins set these up under **Offsite backups**, with no config files to edit. Pic
 - **Cloud storage:** Backblaze B2, Cloudflare R2, Wasabi, Amazon S3, MinIO, or any S3-compatible service. Enter the bucket and an access key that can only reach it.
 - **Another disk:** a folder on this machine, like a second drive or a mounted network share (`/mnt/backup`). Blocky runs restic in a short-lived `restic/restic` container that mounts it, so Compose doesn't change.
 - **SFTP / NAS:** a host, user, and folder. Sign in with a password, or with an SSH key the panel generates for you. The server's host key is pinned the first time you connect, and copying stops if it ever changes.
+- **Blocky Cloud:** off-site storage from a Blocky Cloud subscription, with nothing to set up. Link the panel first (see [Blocky Cloud](#blocky-cloud)).
 
 Then choose a **backup passphrase**. Everything is encrypted before it leaves the machine. After each backup (or once a day), Blocky copies what changed, one server at a time, with each server's settings. A server's Backups tab shows when it was last copied, and failures go to its activity log and the webhook.
 
@@ -213,6 +214,15 @@ Then choose a **backup passphrase**. Everything is encrypted before it leaves th
 The passphrase can't be recovered: keep it in a password manager. It can be changed at any time (the old one stops working). For cloud storage, turn on object versioning or object lock at the provider, so even someone who takes over the panel can't erase older copies.
 
 A restore trusts the destination: whatever is in the copy becomes the server's files, so use credentials that only reach that bucket or folder. Restored files are handed to the game's user with any setuid bits removed.
+
+## Blocky Cloud
+
+Blocky Cloud is an optional subscription from the Blocky console. Admins link the panel under **Blocky Cloud**: the panel shows a short code, and you approve it at console.blockypanel.com. Once linked:
+
+- **A name that follows you.** Claim `yourname.blockylink.net` on the console and point it at the panel. Every server gets its own address, like `survival.yourname.blockylink.net`, so players never type a port. The panel checks in every five minutes, so the name keeps up when your IP changes. Game ports still need forwarding on the router.
+- **Cloud backup.** Choose **Blocky Cloud** under **Offsite backups**. Keys come from the console and renew automatically, and each one only reaches your account's space. Backups are encrypted with your passphrase before upload, as with any other destination.
+
+Check-ins send the panel's name and version, and each server's name and game port. Worlds, files, and passwords never leave the machine except as encrypted offsite copies. `BLOCKY_CLOUD=false` turns the feature off, and `BLOCKY_PANEL_NAME` changes the name shown on the console (the machine's host name by default). The API between the panel and the console is in [docs/console-api.md](docs/console-api.md).
 
 ## Alerts
 
@@ -274,7 +284,7 @@ npm run start    # run the built application
 
 Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. `BLOCKY_DEMO=true` runs the UI with fake servers and no Docker.
 
-Running with Node directly, the data folder is `storage/` in the project (`BLOCKY_STORAGE` changes it). If Docker runs on another machine or in a VM that sees that folder under a different path, set `BLOCKY_DOCKER_STORAGE` to the path as Docker sees it; the Compose file does this for you. `BLOCKY_DEV_ORIGINS` lists extra LAN hostnames allowed to load dev resources.
+Running with Node directly, the data folder is `storage/` in the project (`BLOCKY_STORAGE` changes it). If Docker runs on another machine or in a VM that sees that folder under a different path, set `BLOCKY_DOCKER_STORAGE` to the path as Docker sees it; the Compose file does this for you. `BLOCKY_DEV_ORIGINS` lists extra LAN hostnames allowed to load dev resources. `BLOCKY_CLOUD_URL` points Blocky Cloud at a console running elsewhere, like `http://localhost:8000` for a local copy of the console.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
 

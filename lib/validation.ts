@@ -183,6 +183,7 @@ export const offsiteDestinationSchema = z.discriminatedUnion("kind", [
     password: secret,
     hostKey: z.string().max(20_000).optional(),
   }),
+  z.object({ kind: z.literal("cloud"), panel: z.string().regex(/^[A-Za-z0-9-]{1,64}$/, "That isn't a panel folder.").optional() }),
 ]);
 
 const passphrase = z.string().max(1024);

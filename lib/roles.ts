@@ -80,6 +80,9 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   "/api/offsite/ssh-key": { POST: "admin" },
   "/api/offsite/discover": { POST: "admin" },
   "/api/offsite/restore": { POST: "admin" },
+  // Blocky Cloud: linking to an account steers this panel's public name and off-site backups.
+  "/api/cloud": { GET: "admin", POST: "admin", DELETE: "admin" },
+  "/api/cloud/link": { POST: "admin", DELETE: "admin" },
   "/api/worlds": { GET: "admin" },
   "/api/worlds/[id]": { POST: "admin", DELETE: "admin" },
 };
@@ -95,10 +98,10 @@ export function apiAccess(pathname: string, method: string): Access | undefined 
   return route?.methods[method === "HEAD" ? "GET" : method];
 }
 
-/** Pages: sign-in flows are public, user management and offsite backups are admin-only, everything else needs a session. */
+/** Pages: sign-in flows are public; users, offsite backups, and Blocky Cloud are admin-only; everything else needs a session. */
 export function pageAccess(pathname: string): Access {
   if (pathname === "/login" || pathname === "/setup" || pathname.startsWith("/invite/")) return "public";
-  if (pathname === "/users" || pathname.startsWith("/users/") || pathname === "/backups") return "admin";
+  if (pathname === "/users" || pathname.startsWith("/users/") || pathname === "/backups" || pathname === "/cloud") return "admin";
   return "viewer";
 }
 
@@ -116,6 +119,7 @@ export function capabilities(role: Role | undefined) {
     restore: admin,          // restore, delete, download backups; schedule
     users: admin,
     offsite: admin,          // offsite backups: destination, passphrase, disaster recovery
+    cloud: admin,            // Blocky Cloud: linking, names, cloud backup
   };
 }
 export type Capabilities = ReturnType<typeof capabilities>;

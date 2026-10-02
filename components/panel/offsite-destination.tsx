@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Check, CheckCircle2, Cloud, Copy, FolderClosed, HardDrive, KeyRound, PlugZap, Server, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,9 @@ import { api, ApiError, errorMessage } from "./lib";
 /** The destination form shared by setup, moving, and disaster recovery. Secrets are never prefilled. */
 
 export type DestinationDraft = {
-  kind: "s3" | "folder" | "sftp";
+  kind: "s3" | "folder" | "sftp" | "cloud";
+  /** Blocky Cloud: another panel's folder to use (restoring on a new machine), or "" for this panel's own. */
+  cloudPanel: string;
   provider: S3Provider; endpoint: string; region: string; bucket: string; prefix: string; accessKeyId: string; secretAccessKey: string; hasSecret?: boolean;
   path: string;
   host: string; port: string; user: string; remotePath: string; auth: "password" | "key"; password: string; hasPassword?: boolean;
@@ -24,15 +27,20 @@ export type DestinationDraft = {
 export type PublicDestination =
   | { kind: "s3"; provider: S3Provider; endpoint: string; region: string; bucket: string; prefix: string; accessKeyId: string; hasSecret?: boolean }
   | { kind: "folder"; path: string }
-  | { kind: "sftp"; host: string; port: number; user: string; path: string; auth: "password" | "key"; hasPassword?: boolean; publicKey?: string; hostFingerprints?: string[] };
+  | { kind: "sftp"; host: string; port: number; user: string; path: string; auth: "password" | "key"; hasPassword?: boolean; publicKey?: string; hostFingerprints?: string[] }
+  | { kind: "cloud"; panel?: string };
+
+/** What the panel knows about Blocky Cloud, for offering it as a destination. */
+export type CloudInfo = { linked: boolean; available: boolean; panelId: string; folders: { id: string; name: string; lastKeyAt: string | null }[] };
 
 export const emptyDraft: DestinationDraft = {
-  kind: "s3", provider: "b2", endpoint: "", region: "", bucket: "", prefix: "blocky", accessKeyId: "", secretAccessKey: "",
+  kind: "s3", cloudPanel: "", provider: "b2", endpoint: "", region: "", bucket: "", prefix: "blocky", accessKeyId: "", secretAccessKey: "",
   path: "/mnt/backup", host: "", port: "22", user: "", remotePath: "", auth: "key", password: "",
 };
 
 export function draftFrom(destination?: PublicDestination): DestinationDraft {
   if (!destination) return emptyDraft;
+  if (destination.kind === "cloud") return { ...emptyDraft, kind: "cloud", cloudPanel: destination.panel || "" };
   if (destination.kind === "s3") return { ...emptyDraft, ...destination, secretAccessKey: "" };
   if (destination.kind === "folder") return { ...emptyDraft, kind: "folder", path: destination.path };
   // The host key stays on the server; leaving hostKey empty keeps the saved one for the same host.
@@ -41,6 +49,7 @@ export function draftFrom(destination?: PublicDestination): DestinationDraft {
 
 /** What the API expects. Blank secrets are left out, so the saved ones are kept. */
 export function destinationPayload(draft: DestinationDraft) {
+  if (draft.kind === "cloud") return { kind: "cloud", ...(draft.cloudPanel ? { panel: draft.cloudPanel } : {}) };
   if (draft.kind === "s3") return { kind: "s3", provider: draft.provider, endpoint: draft.endpoint, region: draft.region, bucket: draft.bucket, prefix: draft.prefix, accessKeyId: draft.accessKeyId, ...(draft.secretAccessKey ? { secretAccessKey: draft.secretAccessKey } : {}) };
   if (draft.kind === "folder") return { kind: "folder", path: draft.path };
   return { kind: "sftp", host: draft.host, port: Number(draft.port) || 22, user: draft.user, path: draft.remotePath, auth: draft.auth, ...(draft.password ? { password: draft.password } : {}), ...(draft.hostKey ? { hostKey: draft.hostKey } : {}) };
@@ -54,12 +63,13 @@ const kinds = [
   { value: "sftp", label: "SFTP / NAS", hint: "Over SSH", icon: Server },
 ] as const;
 
-export function DestinationFields({ draft, onChange, errors, sshPublicKey, onSshKey }: {
+export function DestinationFields({ draft, onChange, errors, sshPublicKey, onSshKey, cloud }: {
   draft: DestinationDraft;
   onChange: (draft: DestinationDraft) => void;
   errors: Record<string, string>;
   sshPublicKey?: string;
   onSshKey: (key: string) => void;
+  cloud?: CloudInfo;
 }) {
   const set = (values: Partial<DestinationDraft>) => onChange({ ...draft, ...values });
   const provider = S3_PROVIDERS.find((item) => item.value === draft.provider) || S3_PROVIDERS[0];
@@ -82,10 +92,16 @@ export function DestinationFields({ draft, onChange, errors, sshPublicKey, onSsh
         <item.icon className="mt-0.5 size-4 shrink-0" />
         <span><span className="block text-sm font-medium">{item.label}</span><span className="block text-xs text-muted-foreground">{item.hint}</span></span>
       </button>)}
-      <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3 opacity-60" aria-disabled>
-        <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-        <span><span className="block text-sm font-medium">Blocky Cloud</span><span className="block text-xs text-muted-foreground">Coming soon</span></span>
-      </div>
+      {cloud?.available
+        ? <button type="button" role="radio" aria-checked={draft.kind === "cloud"} onClick={() => set({ kind: "cloud" })}
+          className={cn("flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", draft.kind === "cloud" ? "border-foreground/50 bg-accent" : "border-border hover:border-foreground/30")}>
+          <ShieldCheck className="mt-0.5 size-4 shrink-0" />
+          <span><span className="block text-sm font-medium">Blocky Cloud</span><span className="block text-xs text-muted-foreground">Nothing to set up</span></span>
+        </button>
+        : <Link href="/cloud" className="flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3 text-left opacity-70 hover:opacity-100">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0" />
+          <span><span className="block text-sm font-medium">Blocky Cloud</span><span className="block text-xs text-muted-foreground">{cloud?.linked ? "Needs a subscription" : "Link this panel first"}</span></span>
+        </Link>}
     </div>
 
     {draft.kind === "s3" && <div className="grid gap-4 sm:grid-cols-2">
@@ -100,6 +116,17 @@ export function DestinationFields({ draft, onChange, errors, sshPublicKey, onSsh
       <Field label="Folder in the bucket" id="offsite-prefix" error={errors.prefix} hint="Optional. Lets one bucket hold other things too.">{(props) => <Input {...props} value={draft.prefix} onChange={(event) => set({ prefix: event.target.value })} autoComplete="off" spellCheck={false} />}</Field>
       <Field label="Access key ID" id="offsite-key-id" error={errors.accessKeyId} hint={draft.provider === "b2" ? "An application key's keyID." : undefined}>{(props) => <Input {...props} value={draft.accessKeyId} onChange={(event) => set({ accessKeyId: event.target.value })} autoComplete="off" spellCheck={false} />}</Field>
       <Field label="Secret access key" id="offsite-secret" error={errors.secretAccessKey} hint={draft.hasSecret ? "Saved. Leave blank to keep it." : "Use a key that can only reach this bucket."}>{(props) => <Input {...props} type="password" value={draft.secretAccessKey} onChange={(event) => set({ secretAccessKey: event.target.value })} autoComplete="new-password" placeholder={draft.hasSecret ? "••••••••" : ""} />}</Field>
+    </div>}
+
+    {draft.kind === "cloud" && <div className="space-y-3">
+      <p className="text-xs leading-5 text-muted-foreground">Copies go to Blocky Cloud with a key the console gives this panel. It only reaches your account&apos;s space, and it&apos;s renewed automatically.</p>
+      {cloud && cloud.folders.some((folder) => folder.id !== cloud.panelId) && <Field label="Backups of" id="offsite-cloud-panel" hint="Pick another panel to restore its servers here, for example after moving to a new machine.">{(props) => <Select value={draft.cloudPanel || "this"} onValueChange={(value) => set({ cloudPanel: value === "this" || value === cloud.panelId ? "" : value })}>
+        <SelectTrigger {...props} className="w-full"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="this">This panel</SelectItem>
+          {cloud.folders.filter((folder) => folder.id !== cloud.panelId).map((folder) => <SelectItem key={folder.id} value={folder.id}>{folder.name}{folder.lastKeyAt ? ` (last used ${new Date(folder.lastKeyAt).toLocaleDateString()})` : ""}</SelectItem>)}
+        </SelectContent>
+      </Select>}</Field>}
     </div>}
 
     {draft.kind === "folder" && <Field label="Folder on this machine" id="offsite-path" error={errors.path} hint="A second disk or a mounted network share, like /mnt/backup. It must already exist, outside Blocky's own folder.">

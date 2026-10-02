@@ -69,6 +69,11 @@ export async function sshPublicKey(regenerate = false) {
  * destination, and the SSH key from the generated pair. Throws when a needed secret is missing.
  */
 async function completeDestination(input: DestinationInput, previous?: OffsiteDestination): Promise<OffsiteDestination> {
+  if (input.kind === "cloud") {
+    const { cloudBackupAvailable } = await import("@/lib/cloud");
+    if (!(await cloudBackupAvailable())) throw new BadRequestError("Link this panel to a Blocky Cloud account with backup first, on the Blocky Cloud page.");
+    return { kind: "cloud", ...(input.panel ? { panel: input.panel } : {}) };
+  }
   if (input.kind === "s3") {
     const secretAccessKey = input.secretAccessKey || (previous?.kind === "s3" && previous.accessKeyId === input.accessKeyId ? previous.secretAccessKey : undefined);
     if (!secretAccessKey) throw new BadRequestError("Enter the secret access key.", "secretAccessKey");
@@ -149,6 +154,7 @@ export async function offsiteOverview() {
     status: { ...status, copying: Boolean(jobs.copying) },
     restore: jobs.restore,
     sshPublicKey: isDemo() ? await sshPublicKey() : key?.publicKey,
+    cloud: await import("@/lib/cloud").then((cloud) => cloud.cloudOffsiteInfo()).catch(() => undefined),
   };
 }
 

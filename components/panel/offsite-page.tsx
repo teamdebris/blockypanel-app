@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PASSPHRASE_MIN_LENGTH, PASSPHRASE_MIN_WORDS, passphraseProblem } from "@/lib/offsite-core";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, Field, PageHeading, Section } from "./common";
-import { DestinationFields, type DestinationDraft, destinationPayload, draftFrom, emptyDraft, type PublicDestination, TestConnection } from "./offsite-destination";
+import { type CloudInfo, DestinationFields, type DestinationDraft, destinationPayload, draftFrom, emptyDraft, type PublicDestination, TestConnection } from "./offsite-destination";
 import { api, ApiError, errorMessage, formatDate, formatRelative } from "./lib";
 import { useNow, usePanel } from "./panel-context";
 
@@ -28,6 +28,7 @@ type Overview = {
   status: { lastRunAt?: string; lastSuccessAt?: string; lastError?: string; copying: boolean; servers: Record<string, { lastCopyAt?: string; lastError?: string }> };
   restore?: RestoreJob;
   sshPublicKey?: string;
+  cloud?: CloudInfo;
 };
 type FoundServer = { id: string; name: string; type: string; version: string; lastCopyAt: string; removed: boolean; here: boolean };
 
@@ -70,7 +71,7 @@ function SetupForm({ overview, onDone, onCancel }: { overview: Overview; onDone:
   }
   return <Section title={overview.configured ? "Move offsite backups" : "Set up offsite backups"} description="Copies of every server's backups, somewhere other than this machine. Only what changed is sent each time.">
     <div className="space-y-6">
-      <DestinationFields draft={draft} onChange={setDraft} errors={errors} sshPublicKey={sshKey} onSshKey={setSshKey} />
+      <DestinationFields draft={draft} onChange={setDraft} errors={errors} sshPublicKey={sshKey} onSshKey={setSshKey} cloud={overview.cloud} />
       <TestConnection draft={draft} onChange={setDraft} onErrors={setErrors} />
       <div className="space-y-3 border-t border-border pt-5">
         <h3 className="text-sm font-semibold">Backup passphrase</h3>
@@ -124,7 +125,7 @@ function RestoreForm({ overview, onStarted, onCancel }: { overview: Overview; on
   }
   return <Section title="Restore from an offsite backup" description="Brings servers back with their settings and newest world, for example on a new machine. Each one keeps its address and port.">
     <div className="space-y-6">
-      <DestinationFields draft={draft} onChange={(next) => { setDraft(next); setFound(null); }} errors={errors} sshPublicKey={sshKey} onSshKey={setSshKey} />
+      <DestinationFields draft={draft} onChange={(next) => { setDraft(next); setFound(null); }} errors={errors} sshPublicKey={sshKey} onSshKey={setSshKey} cloud={overview.cloud} />
       <TestConnection draft={draft} onChange={setDraft} onErrors={setErrors} />
       <div className="border-t border-border pt-5"><PassphraseFields value={passphrase} confirm="" onValue={(value) => { setPassphrase(value); setFound(null); }} onConfirm={() => undefined} error={errors.passphrase} confirmNeeded={false} /></div>
       {!found && <div className="flex flex-wrap gap-2"><Button onClick={() => void discover()} disabled={busy || !passphrase}>{busy ? <LoaderCircle className="animate-spin" /> : <History />}Find my servers</Button><Button variant="ghost" onClick={onCancel}>Cancel</Button></div>}
