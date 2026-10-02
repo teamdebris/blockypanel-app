@@ -7,6 +7,7 @@ import { adoptRestoredServer, listServers, restoreServerFiles, serverSettingsFor
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
 import { localRepository, writeLocalRepositoryPassword } from "@/lib/incremental-backups";
 import { notify } from "@/lib/notify";
+import { nextCopyAllowedAt } from "@/lib/cloud-core";
 import { describeDestination, folderPathProblem, friendlyDestinationError, type OffsiteDestination, type OffsiteIndex, passphraseProblem } from "@/lib/offsite-core";
 import {
   addKey, copyServer, createLocalFromOffsite, currentKeyId, listWorldSnapshots, pruneRepository, readIndex, readSettingsSnapshot,
@@ -151,7 +152,7 @@ export async function offsiteOverview() {
       keep: settings.keep,
       configuredAt: settings.configuredAt,
     } : {}),
-    status: { ...status, copying: Boolean(jobs.copying) },
+    status: { ...status, copying: Boolean(jobs.copying), nextCopyAt: settings ? nextCopyAllowedAt(await copiesPerDay(settings.destination), status.lastSuccessAt) ?? undefined : undefined },
     restore: jobs.restore,
     sshPublicKey: isDemo() ? await sshPublicKey() : key?.publicKey,
     cloud: await import("@/lib/cloud").then((cloud) => cloud.cloudOffsiteInfo()).catch(() => undefined),
@@ -222,7 +223,7 @@ async function configureUnlocked(input: { destination: DestinationInput; passphr
       } catch (error) { throw destinationError(error); }
     }
   }
-  await saveOffsiteSettings({ destination, schedule: input.schedule, keep: input.keep, indexPassword, panelKeyId, passphraseKeyId, configuredAt: new Date().toISOString() });
+  await saveOffsiteSettings({ destination, schedule: await scheduleFor(destination, input.schedule), keep: input.keep, indexPassword, panelKeyId, passphraseKeyId, configuredAt: new Date().toISOString() });
   await resetOffsiteStatus();
   (await accounts()).audit(await currentActor() || "Admin", `Set up offsite backups to ${describeDestination(destination)}`);
   queueCopy();
@@ -233,7 +234,7 @@ async function configureUnlocked(input: { destination: DestinationInput; passphr
 export async function updateOffsite(input: { schedule?: OffsiteSchedule; keep?: number; passphrase?: string }) {
   const settings = await offsiteSettings();
   if (!settings) throw new NotFoundError("Offsite backups aren't set up.");
-  const next: OffsiteSettings = { ...settings, schedule: input.schedule ?? settings.schedule, keep: input.keep ?? settings.keep };
+  const next: OffsiteSettings = { ...settings, schedule: await scheduleFor(settings.destination, input.schedule ?? settings.schedule), keep: input.keep ?? settings.keep };
   if (input.passphrase !== undefined) {
     const problem = passphraseProblem(input.passphrase);
     if (problem) throw new BadRequestError(problem, "passphrase");
@@ -345,6 +346,17 @@ async function copyAll() {
   if (indexError) void notify(`Offsite backup index couldn't be updated: ${indexError}`);
 }
 
+/** The copies a day the destination allows: Blocky Cloud's free plan allows one. Null for no limit. */
+async function copiesPerDay(destination: OffsiteDestination | undefined) {
+  if (destination?.kind !== "cloud") return null;
+  return import("@/lib/cloud").then((cloud) => cloud.cloudCopiesPerDay()).catch(() => null);
+}
+
+/** Under a daily limit, copies run once a day whatever schedule was picked. */
+async function scheduleFor(destination: OffsiteDestination, schedule: OffsiteSchedule): Promise<OffsiteSchedule> {
+  return (await copiesPerDay(destination)) ? "daily" : schedule;
+}
+
 /** Reserves the slot synchronously, including the time needed to find the actor. */
 function queueCopy() {
   // A copy asked for while one runs (for example, right after moving to a new destination) runs next.
@@ -363,8 +375,14 @@ function queueCopy() {
 
 /** Starts a copy of every server in the background, unless one is already running. */
 export async function startCopy() {
-  if (!(await offsiteSettings())) throw new NotFoundError("Offsite backups aren't set up.");
+  const settings = await offsiteSettings();
+  if (!settings) throw new NotFoundError("Offsite backups aren't set up.");
   if (jobs.configuring) throw new ConflictError("Offsite backups are being set up. Try again when that finishes.");
+  const next = nextCopyAllowedAt(await copiesPerDay(settings.destination), (await offsiteStatus()).lastSuccessAt);
+  if (next) {
+    const hours = Math.max(1, Math.ceil((Date.parse(next) - Date.now()) / 3_600_000));
+    throw new ConflictError(`The free plan copies to Blocky Cloud once a day. The next copy can start in about ${hours} hour${hours === 1 ? "" : "s"}.`);
+  }
   return queueCopy();
 }
 
@@ -377,7 +395,10 @@ export async function runOffsiteSchedule() {
   const lastRun = status.lastRunAt ? Date.parse(status.lastRunAt) : 0;
   if (status.lastError && now - lastRun < RETRY_AFTER_FAILURE_MS) return;
   let due = false;
-  if (settings.schedule === "daily") due = now - lastRun >= DAY_MS;
+  const limit = await copiesPerDay(settings.destination);
+  // Only successful copies count against a daily limit, so a failed copy still retries after RETRY_AFTER_FAILURE_MS.
+  if (limit) due = !nextCopyAllowedAt(limit, status.lastSuccessAt, now);
+  else if (settings.schedule === "daily") due = now - lastRun >= DAY_MS;
   else {
     for (const server of await listServers().catch(() => [])) {
       const lastBackup = server.backup?.lastRunAt ? Date.parse(server.backup.lastRunAt) : 0;

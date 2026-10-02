@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  type BackupCredentials, checkinServers, cloudAddresses, cloudPrefix, needsNewCredentials, nextCheckinDelay, normalizeCloudUrl, parseCheckin, parseCredentials, versionAtLeast,
+  type BackupCredentials, checkinServers, nextCopyAllowedAt, cloudAddresses, cloudPrefix, needsNewCredentials, nextCheckinDelay, normalizeCloudUrl, parseCheckin, parseCredentials, versionAtLeast,
 } from "../lib/cloud-core.ts";
 import { describeDestination, repositoryFor } from "../lib/offsite-core.ts";
 
@@ -17,7 +17,7 @@ const checkin = {
       { id: "b19f00aa1c3d", label: "creative", fqdn: "creative.alex.blockylink.net", port: 25566 },
     ],
   }],
-  backup: { available: true, readOnly: false, quotaBytes: 268435456000, usedBytes: 1024, deleteAfter: null, renewCredentials: false, folders: [{ id: "old-panel-1", name: "Old box", lastKeyAt: "2026-09-01T00:00:00+00:00" }] },
+  backup: { available: true, readOnly: false, quotaBytes: 268435456000, usedBytes: 1024, deleteAfter: null, renewCredentials: false, copiesPerDay: null, folders: [{ id: "old-panel-1", name: "Old box", lastKeyAt: "2026-09-01T00:00:00+00:00" }] },
   minPanelVersion: "0.2.0",
   notices: [],
   nextCheckinSeconds: 300,
@@ -117,4 +117,16 @@ test("a Blocky Cloud destination is named, but must be resolved before use", () 
   assert.equal(describeDestination({ kind: "cloud" }), "Blocky Cloud");
   assert.equal(describeDestination({ kind: "cloud", panel: "old-panel-1" }), "Blocky Cloud · panel old-pane");
   assert.throws(() => repositoryFor({ kind: "cloud" }, "index"), /resolved/);
+});
+
+test("the free plan's daily limit counts successful copies", () => {
+  const now = Date.parse("2026-10-02T12:00:00Z");
+  assert.equal(nextCopyAllowedAt(null, "2026-10-02T11:00:00Z", now), null, "no limit on Standard");
+  assert.equal(nextCopyAllowedAt(1, undefined, now), null, "the first copy can run now");
+  assert.equal(nextCopyAllowedAt(1, "2026-10-01T11:00:00Z", now), null, "a day has passed");
+  assert.equal(nextCopyAllowedAt(1, "2026-10-02T09:00:00Z", now), "2026-10-03T09:00:00.000Z");
+  const free = parseCheckin({ ...checkin, backup: { ...checkin.backup, copiesPerDay: 1 } }).backup;
+  assert.equal(free.available && free.copiesPerDay, 1);
+  const standard = parseCheckin(checkin).backup;
+  assert.equal(standard.available && standard.copiesPerDay, null);
 });

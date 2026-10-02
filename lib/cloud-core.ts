@@ -17,7 +17,7 @@ export type CloudServerRecord = { id: string; label: string; fqdn: string; port:
 export type CloudName = { name: string; fqdn: string; state: NameState; ip: string | null; servers: CloudServerRecord[] };
 export type CloudBackupStatus =
   | { available: false }
-  | { available: true; readOnly: boolean; quotaBytes: number; usedBytes: number; deleteAfter: string | null; renewCredentials: boolean; folders: CloudBackupFolder[] };
+  | { available: true; readOnly: boolean; quotaBytes: number; usedBytes: number; deleteAfter: string | null; renewCredentials: boolean; folders: CloudBackupFolder[]; copiesPerDay: number | null };
 /** A panel's folder in the account's backup space. Listed even after that panel is unlinked, for restores. */
 export type CloudBackupFolder = { id: string; name: string; lastKeyAt: string | null };
 export type CloudNotice = { level: "info" | "warning" | "error"; message: string };
@@ -110,6 +110,18 @@ export function needsNewCredentials(credentials: BackupCredentials | undefined, 
   return new Date(credentials.expiresAt).getTime() - now < RENEW_BEFORE_MS;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When the next copy to Blocky Cloud may start, under a plan that limits copies a day (the free plan
+ * allows one), or null when a copy may start now. Only successful copies count against the limit.
+ */
+export function nextCopyAllowedAt(copiesPerDay: number | null | undefined, lastSuccessAt: string | undefined, now = Date.now()) {
+  if (!copiesPerDay || !lastSuccessAt) return null;
+  const next = Date.parse(lastSuccessAt) + DAY_MS / copiesPerDay;
+  return Number.isFinite(next) && next > now ? new Date(next).toISOString() : null;
+}
+
 /**
  * Each panel keeps its copies in its own folder inside the account's space. A replacement panel
  * can point at another panel's folder (by that panel's ID) to restore its servers.
@@ -167,6 +179,7 @@ export function parseCheckin(value: unknown): CheckinResponse {
       ? {
         available: true, readOnly: backup.readOnly === true, quotaBytes: Number(backup.quotaBytes) || 0, usedBytes: Number(backup.usedBytes) || 0,
         deleteAfter: typeof backup.deleteAfter === "string" ? backup.deleteAfter : null, renewCredentials: backup.renewCredentials === true,
+        copiesPerDay: typeof backup.copiesPerDay === "number" && backup.copiesPerDay > 0 ? Math.floor(backup.copiesPerDay) : null,
         folders: (Array.isArray(backup.folders) ? backup.folders : []).filter(isObject)
           .map((folder) => ({ id: String(folder.id ?? ""), name: String(folder.name ?? "").slice(0, 100), lastKeyAt: typeof folder.lastKeyAt === "string" ? folder.lastKeyAt : null }))
           .filter((folder) => SERVER_ID.test(folder.id)),

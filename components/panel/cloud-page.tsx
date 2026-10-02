@@ -105,7 +105,7 @@ function AccountCard({ overview, onChanged }: { overview: Enabled; onChanged: ()
         {overview.lastError && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{overview.lastError}</p>}
         {overview.outdated && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">This panel is older than Blocky Cloud supports. Update it to keep your names and backups working.</p>}
         {overview.notices.map((notice, index) => <p key={index} className={cn("rounded-lg border px-3 py-2 text-xs", notice.level === "error" ? tone.bad : notice.level === "warning" ? tone.warn : tone.muted)}>{notice.message}</p>)}
-        {subscription && subscription.state !== "active" && subscription.state !== "grace" ? <p className="text-xs text-muted-foreground">The free plan includes one name with one server address. Standard adds more server addresses and cloud backup. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
+        {subscription && subscription.state !== "active" && subscription.state !== "grace" ? <p className="text-xs text-muted-foreground">The free plan includes one name with one server address, and a little backup space copied once a day. Standard adds more server addresses and much more room. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
         <div className="border-t border-border pt-3">
           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmUnlink(true)}><Unlink />Unlink this panel</Button>
         </div>
@@ -176,9 +176,10 @@ function BackupCard({ overview }: { overview: Enabled }) {
   const backup = overview.backup;
   return <Section title="Blocky Cloud backup" description="Off-site copies, encrypted on this machine before upload."
     actions={<Button size="sm" variant="outline" asChild><Link href="/backups"><CloudUpload />Offsite backups</Link></Button>}>
-    {!backup?.available ? <p className="text-sm text-muted-foreground">Cloud backup comes with Blocky Cloud Standard. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : <div className="space-y-3 text-sm">
+    {!backup?.available ? <p className="text-sm text-muted-foreground">This account&apos;s plan has no cloud backup space. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : <div className="space-y-3 text-sm">
       <div className="flex items-baseline justify-between gap-2"><span className="font-medium">{formatBytes(backup.usedBytes)} used</span><span className="text-xs text-muted-foreground">of {formatBytes(backup.quotaBytes)}</span></div>
       <UsageBar value={backup.usedBytes} max={backup.quotaBytes} label="Blocky Cloud storage used" />
+      {backup.copiesPerDay ? <p className="text-xs text-muted-foreground">The free plan copies once a day. Standard copies after every backup and has more room. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
       {backup.readOnly && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">Read-only: restores work, but new copies can&apos;t upload until there&apos;s room or the subscription is active again.</p>}
       {backup.deleteAfter && <p className="text-xs text-destructive">These backups will be deleted on {formatDate(backup.deleteAfter)} unless the subscription is renewed.</p>}
       {!system?.offsiteBackups && <p className="text-xs text-muted-foreground">To use it, open <Link className="underline" href="/backups">Offsite backups</Link> and choose Blocky Cloud as the destination.</p>}

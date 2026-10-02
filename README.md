@@ -208,7 +208,7 @@ Admins set these up under **Offsite backups**, with no config files to edit. Pic
 - **Cloud storage:** Backblaze B2, Cloudflare R2, Wasabi, Amazon S3, MinIO, or any S3-compatible service. Enter the bucket and an access key that can only reach it.
 - **Another disk:** a folder on this machine, like a second drive or a mounted network share (`/mnt/backup`). Blocky runs restic in a short-lived `restic/restic` container that mounts it, so Compose doesn't change.
 - **SFTP / NAS:** a host, user, and folder. Sign in with a password, or with an SSH key the panel generates for you. The server's host key is pinned the first time you connect, and copying stops if it ever changes.
-- **Blocky Cloud:** off-site storage from a Blocky Cloud Standard subscription, with nothing to set up. Link the panel first (see [Blocky Cloud](#blocky-cloud)).
+- **Blocky Cloud:** off-site storage from Blocky Cloud, with nothing to set up. The free plan copies once a day. Link the panel first (see [Blocky Cloud](#blocky-cloud)).
 
 Then choose a **backup passphrase**. Everything is encrypted before it leaves the machine. After each backup (or once a day), Blocky copies what changed, one server at a time, with each server's settings. A server's Backups tab shows when it was last copied, and failures go to its activity log and the webhook.
 
@@ -220,7 +220,7 @@ A restore trusts the destination: whatever is in the copy becomes the server's f
 
 ## Blocky Cloud
 
-Blocky Cloud is an optional service at cloud.blockypanel.com. A free account gets one name with one server address, and Standard adds more server addresses and cloud backup. Admins link the panel under **Blocky Cloud**: the panel shows a short code, and you approve it on Blocky Cloud. Once linked:
+Blocky Cloud is an optional service at cloud.blockypanel.com. A free account gets one name with one server address, plus 5 GB of cloud backup copied once a day. Standard adds more server addresses and much more backup space. Admins link the panel under **Blocky Cloud**: the panel shows a short code, and you approve it on Blocky Cloud. Once linked:
 
 - **A name that follows you.** Claim `yourname.blockylink.net` on Blocky Cloud and point it at the panel. Every server gets its own address, like `survival.yourname.blockylink.net`, so players never type a port. The panel checks in every five minutes, so the name keeps up when your IP changes. Game ports still need forwarding on the router. Turn a server off under **Servers on blockylink.net** to leave it without an address, for example a backend behind a Velocity or BungeeCord proxy, or an archived world.
 - **Cloud backup.** Choose **Blocky Cloud** under **Offsite backups**. Keys come from Blocky Cloud and renew automatically, and each one only reaches your account's space. Backups are encrypted with your passphrase before upload, as with any other destination.
