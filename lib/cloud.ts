@@ -241,12 +241,12 @@ export async function setServerPublished(serverId: string, publish: boolean) {
 
 async function freshCredentials(state: CloudState): Promise<BackupCredentials> {
   if (!state.token) throw new BadRequestError("This panel isn't linked to Blocky Cloud. Link it on the Blocky Cloud page first.");
-  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
+  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("This account's plan has no cloud backup space. See the plans at cloud.blockypanel.com.");
   if (!needsNewCredentials(state.credentials, state.checkin?.backup)) return state.credentials!;
   let body: unknown;
   try { body = (await call<unknown>("/backup/credentials", { token: state.token })).body; }
   catch (error) {
-    if (error instanceof CloudError && error.status === 403) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
+    if (error instanceof CloudError && error.status === 403) throw new BadRequestError("This account's plan has no cloud backup space. See the plans at cloud.blockypanel.com.");
     throw error;
   }
   const credentials = parseCredentials(body);
@@ -271,6 +271,12 @@ export async function cloudBackupDestination(panelFolder?: string): Promise<Extr
   };
 }
 
+/** How many copies a day the account's plan allows to Blocky Cloud, or null for no limit. */
+export async function cloudCopiesPerDay() {
+  const backup = (await loadState()).checkin?.backup;
+  return backup?.available ? backup.copiesPerDay : null;
+}
+
 /** Whether a "Blocky Cloud" destination can be chosen right now. */
 export async function cloudBackupAvailable() {
   const state = await loadState();
@@ -288,6 +294,7 @@ export async function cloudOffsiteInfo() {
   return {
     linked: Boolean(state.token),
     available: Boolean(state.token && backup?.available),
+    copiesPerDay: backup?.available ? backup.copiesPerDay : null,
     panelId: await panelId(),
     folders: backup?.available ? backup.folders : [],
   };

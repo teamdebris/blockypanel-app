@@ -25,7 +25,7 @@ type Overview = {
   schedule?: Schedule;
   keep?: number;
   configuredAt?: string;
-  status: { lastRunAt?: string; lastSuccessAt?: string; lastError?: string; copying: boolean; servers: Record<string, { lastCopyAt?: string; lastError?: string }> };
+  status: { lastRunAt?: string; lastSuccessAt?: string; lastError?: string; copying: boolean; nextCopyAt?: string; servers: Record<string, { lastCopyAt?: string; lastError?: string }> };
   restore?: RestoreJob;
   sshPublicKey?: string;
   cloud?: CloudInfo;
@@ -33,6 +33,7 @@ type Overview = {
 type FoundServer = { id: string; name: string; type: string; version: string; lastCopyAt: string; removed: boolean; here: boolean };
 
 const scheduleLabels: Record<Schedule, string> = { "after-backup": "After each backup", daily: "Once a day" };
+const ONCE_A_DAY_HINT = "Blocky Cloud's free plan copies once a day.";
 
 function fieldErrors(error: unknown): Record<string, string> {
   return error instanceof ApiError && error.field ? { [error.field.replace(/^destination\./, "")]: error.message } : {};
@@ -60,10 +61,12 @@ function SetupForm({ overview, onDone, onCancel }: { overview: Overview; onDone:
   const [sshKey, setSshKey] = useState(overview.sshPublicKey);
   const [busy, setBusy] = useState(false);
   const ready = !passphraseProblem(passphrase) && passphrase === confirm;
+  // Blocky Cloud's free plan copies once a day; the panel holds to that whatever is picked here.
+  const limited = draft.kind === "cloud" && Boolean(overview.cloud?.copiesPerDay);
   async function save() {
     setBusy(true); setErrors({});
     try {
-      await api("/api/offsite", { method: "PUT", body: JSON.stringify({ destination: destinationPayload(draft), passphrase, schedule, keep: Number(keep) }) });
+      await api("/api/offsite", { method: "PUT", body: JSON.stringify({ destination: destinationPayload(draft), passphrase, schedule: limited ? "daily" : schedule, keep: Number(keep) }) });
       toast.success("Offsite backups are on. The first copy is running.");
       onDone();
     } catch (error) { setErrors(fieldErrors(error)); toast.error(errorMessage(error, "Couldn't set up offsite backups.")); }
@@ -79,7 +82,7 @@ function SetupForm({ overview, onDone, onCancel }: { overview: Overview; onDone:
         <PassphraseFields value={passphrase} confirm={confirm} onValue={setPassphrase} onConfirm={setConfirm} error={errors.passphrase} confirmNeeded />
       </div>
       <div className="grid gap-4 border-t border-border pt-5 sm:grid-cols-2">
-        <Field label="Copy" id="offsite-schedule">{(props) => <Select value={schedule} onValueChange={(value) => setSchedule(value as Schedule)}>
+        <Field label="Copy" id="offsite-schedule" hint={limited ? ONCE_A_DAY_HINT : undefined}>{(props) => <Select value={limited ? "daily" : schedule} onValueChange={(value) => setSchedule(value as Schedule)} disabled={limited}>
           <SelectTrigger {...props} className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>{(Object.keys(scheduleLabels) as Schedule[]).map((value) => <SelectItem key={value} value={value}>{scheduleLabels[value]}</SelectItem>)}</SelectContent>
         </Select>}</Field>
@@ -184,10 +187,12 @@ function StatusCard({ overview, onChanged, onMove, onRestore }: { overview: Over
   const [schedule, setSchedule] = useState<Schedule>(overview.schedule || "after-backup");
   const [keep, setKeep] = useState(String(overview.keep || 30));
   const { status } = overview;
+  const limited = overview.destination?.kind === "cloud" && Boolean(overview.cloud?.copiesPerDay);
+  const waiting = Boolean(status.nextCopyAt && new Date(status.nextCopyAt).getTime() > now);
   const dirty = schedule !== overview.schedule || Number(keep) !== overview.keep;
   return <>
     <Section title="Offsite backups" description={overview.label}
-      actions={<Button size="sm" variant="outline" disabled={status.copying || isPending("offsite:copy")} onClick={() => void track("offsite:copy", async () => { await api("/api/offsite/copy", { method: "POST" }); toast.success("Copying now."); onChanged(); })}>
+      actions={<Button size="sm" variant="outline" title={waiting ? `${ONCE_A_DAY_HINT} Next copy ${formatRelative(status.nextCopyAt, now)}.` : undefined} disabled={status.copying || waiting || isPending("offsite:copy")} onClick={() => void track("offsite:copy", async () => { await api("/api/offsite/copy", { method: "POST" }); toast.success("Copying now."); onChanged(); })}>
         {status.copying ? <LoaderCircle className="animate-spin" /> : <RefreshCcw />}{status.copying ? "Copying…" : "Copy now"}
       </Button>}>
       <div className="space-y-4 text-sm">
@@ -196,6 +201,7 @@ function StatusCard({ overview, onChanged, onMove, onRestore }: { overview: Over
           {status.lastSuccessAt ? <>Last complete copy {formatRelative(status.lastSuccessAt, now)}</> : status.copying ? "The first copy is running. A large world can take a while." : "No complete copy yet."}
         </p>
         {status.lastError && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{status.lastError} Retrying automatically. Local backups aren&apos;t affected.</p>}
+        {limited && <p className="text-xs text-muted-foreground">{ONCE_A_DAY_HINT}{status.nextCopyAt && waiting ? ` The next copy runs ${formatRelative(status.nextCopyAt, now)}.` : ""}</p>}
         {servers.length > 0 && <ul className="divide-y divide-border rounded-xl border border-border">
           {servers.map((server) => { const item = status.servers[server.id]; return <li key={server.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
             <span className="font-medium">{server.name}</span>
@@ -203,7 +209,7 @@ function StatusCard({ overview, onChanged, onMove, onRestore }: { overview: Over
           </li>; })}
         </ul>}
         <div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <Field label="Copy" id="offsite-schedule-edit">{(props) => <Select value={schedule} onValueChange={(value) => setSchedule(value as Schedule)}>
+          <Field label="Copy" id="offsite-schedule-edit">{(props) => <Select value={limited ? "daily" : schedule} onValueChange={(value) => setSchedule(value as Schedule)} disabled={limited}>
             <SelectTrigger {...props} className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>{(Object.keys(scheduleLabels) as Schedule[]).map((value) => <SelectItem key={value} value={value}>{scheduleLabels[value]}</SelectItem>)}</SelectContent>
           </Select>}</Field>

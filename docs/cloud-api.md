@@ -85,7 +85,7 @@ can rename it on Blocky Cloud.
   }],
   "backup": {
     "available": true, "readOnly": false, "quotaBytes": 268435456000, "usedBytes": 1073741824,
-    "deleteAfter": null, "renewCredentials": false,
+    "deleteAfter": null, "renewCredentials": false, "copiesPerDay": null,
     "folders": [{ "id": "3f2a9c1e-…", "name": "Home server", "lastKeyAt": "2026-10-02T06:00:00+00:00" }]
   },
   "minPanelVersion": "0.2.0",
@@ -98,6 +98,8 @@ can rename it on Blocky Cloud.
 - **`names[].state`** is `active`, `frozen` (lapsed: kept at the last address, not following
   changes), `reserved` (no records, name held), or `suspended`.
 - **`backup.available`** is `false` without a plan. Then the object has no other fields.
+- **`backup.copiesPerDay`** is how many copies a day the plan allows: `1` on the free plan, `null`
+  for no limit. The panel enforces it. Only successful copies count, so a failed copy still retries.
 - **`backup.folders`** lists every panel folder in the account's space, including unlinked panels,
   so a replacement panel can restore them.
 
@@ -130,7 +132,7 @@ The panel uses `<prefix>panels/<panelId>/` as its offsite destination. The layou
 usual offsite layout from `lib/offsite-core.ts`: `index/` and `servers/<id>/`, all encrypted by
 restic before upload.
 
-`403` means the account's plan has no backup.
+`403` means the account's plan has no backup space.
 
 ## Unlinking
 

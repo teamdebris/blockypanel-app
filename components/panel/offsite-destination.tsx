@@ -31,7 +31,7 @@ export type PublicDestination =
   | { kind: "cloud"; panel?: string };
 
 /** What the panel knows about Blocky Cloud, for offering it as a destination. */
-export type CloudInfo = { linked: boolean; available: boolean; panelId: string; folders: { id: string; name: string; lastKeyAt: string | null }[] };
+export type CloudInfo = { linked: boolean; available: boolean; copiesPerDay: number | null; panelId: string; folders: { id: string; name: string; lastKeyAt: string | null }[] };
 
 export const emptyDraft: DestinationDraft = {
   kind: "s3", cloudPanel: "", provider: "b2", endpoint: "", region: "", bucket: "", prefix: "blocky", accessKeyId: "", secretAccessKey: "",
