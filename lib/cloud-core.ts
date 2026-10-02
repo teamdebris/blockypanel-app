@@ -121,9 +121,13 @@ export function cloudPrefix(credentials: Pick<BackupCredentials, "prefix">, pane
 
 const SERVER_ID = /^[A-Za-z0-9-]{1,64}$/;
 
-/** What check-in sends: each server's ID, name, and game port. */
-export function checkinServers(servers: { id: string; name: string; port: number }[]) {
-  return servers.filter((server) => SERVER_ID.test(server.id) && server.port > 0 && server.port < 65536)
+/**
+ * What check-in sends: each server's ID, name, and game port. Servers the owner chose not to publish
+ * (backends behind a proxy, archived worlds) are left out, so the console removes their records.
+ */
+export function checkinServers(servers: { id: string; name: string; port: number }[], unpublished: readonly string[] = []) {
+  const hidden = new Set(unpublished);
+  return servers.filter((server) => SERVER_ID.test(server.id) && server.port > 0 && server.port < 65536 && !hidden.has(server.id))
     .slice(0, 200)
     .map((server) => ({ id: server.id, name: server.name.slice(0, 60) || server.id, port: server.port }));
 }

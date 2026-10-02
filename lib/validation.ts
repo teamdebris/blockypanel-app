@@ -194,6 +194,7 @@ export const offsiteSetupSchema = z.object({
   keep: z.number().int().min(1).max(500).default(30),
 });
 export const offsiteUpdateSchema = z.object({ schedule: z.enum(["after-backup", "daily"]).optional(), keep: z.number().int().min(1).max(500).optional(), passphrase: passphrase.optional() });
+export const cloudServerSchema = z.object({ serverId: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/, "Invalid server."), publish: z.boolean() });
 export const offsiteTestSchema = z.object({ destination: offsiteDestinationSchema });
 export const offsiteDiscoverSchema = z.object({ destination: offsiteDestinationSchema, passphrase });
 export const offsiteRestoreSchema = offsiteDiscoverSchema.extend({ servers: z.array(z.string().regex(/^[a-zA-Z0-9-]{1,64}$/)).min(1, "Choose at least one server.").max(100) });

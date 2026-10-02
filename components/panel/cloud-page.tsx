@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, CloudUpload, ExternalLink, Globe, Link2, L
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { type CloudBackupStatus, type CloudName, type CloudNotice, nameStateLabels, type SubscriptionState, subscriptionLabels } from "@/lib/cloud-core";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog, PageHeading, Section, UsageBar } from "./common";
@@ -17,7 +18,7 @@ type Overview =
   | { enabled: false; reason: string }
   | {
     enabled: true; consoleUrl: string; linked: boolean; unlinkedRemotely: boolean; linking?: Linking; account?: { email: string }; linkedAt?: string;
-    lastCheckinAt?: string; lastAttemptAt?: string; nextCheckinAt?: string; lastError?: string; panelName: string; panelId: string; outdated: boolean;
+    lastCheckinAt?: string; lastAttemptAt?: string; nextCheckinAt?: string; lastError?: string; panelName: string; panelId: string; unpublished: string[]; outdated: boolean;
     subscription?: { state: SubscriptionState; plan: string | null; graceEndsAt: string | null; lapsedAt: string | null };
     entitlements?: { names: number; serversPerName: number; storageBytes: number };
     names: CloudName[]; backup?: CloudBackupStatus; notices: CloudNotice[];
@@ -133,10 +134,40 @@ function NamesCard({ overview }: { overview: Enabled }) {
             <span className="font-mono">{server.fqdn}</span>
             <span className="text-xs text-muted-foreground">port {server.port}</span>
           </li>)}
-        </ul> : <p className="text-xs text-muted-foreground">No servers yet. They&apos;re added at the next check-in.</p>}
+        </ul> : <p className="text-xs text-muted-foreground">{overview.unpublished.length ? "No published servers. Turn one on below." : "No servers yet. They're added at the next check-in."}</p>}
         {name.state === "frozen" && <p className="text-xs text-warning">Frozen: the subscription ended, so this name stays at its last address and won&apos;t follow IP changes.</p>}
       </div>)}</div>}
     <p className="mt-4 text-xs text-muted-foreground">Game ports still need to be forwarded on your router. The name only finds this machine.</p>
+  </Section>;
+}
+
+function PublishCard({ overview, onChanged }: { overview: Enabled; onChanged: () => void }) {
+  const { servers, system, track, isPending } = usePanel();
+  const hidden = new Set(overview.unpublished);
+  const addresses = system?.cloudAddresses ?? {};
+  const pointed = overview.names.some((name) => name.state === "active" || name.state === "frozen");
+  return <Section title="Servers on blockylink.net" description="Turn a server off to leave it without an address: a backend behind a Velocity or BungeeCord proxy, or an archived world. Changes reach DNS within a minute.">
+    {servers.length === 0 ? <p className="text-sm text-muted-foreground">No servers yet.</p>
+      : <ul className="divide-y divide-border rounded-xl border border-border">
+        {servers.map((server) => {
+          const published = !hidden.has(server.id);
+          const key = `cloud:publish:${server.id}`;
+          return <li key={server.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+            <label htmlFor={`publish-${server.id}`} className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{server.name}</span>
+              <span className="block truncate font-mono text-xs text-muted-foreground">
+                {!published ? "Not published" : addresses[server.id] || (pointed ? "Gets an address at the next check-in" : "Published once a name points at this panel")}
+              </span>
+            </label>
+            <Switch id={`publish-${server.id}`} checked={published} disabled={isPending(key)} aria-label={`Publish ${server.name} on blockylink.net`}
+              onCheckedChange={(checked) => void track(key, async () => {
+                try { await api("/api/cloud/servers", { method: "PATCH", body: JSON.stringify({ serverId: server.id, publish: checked }) }); toast.success(checked ? `${server.name} is published.` : `${server.name} is off blockylink.net.`); }
+                catch (error) { toast.error(errorMessage(error, "Couldn't change that.")); }
+                onChanged();
+              })} />
+          </li>;
+        })}
+      </ul>}
   </Section>;
 }
 
@@ -190,6 +221,7 @@ export function CloudPage() {
               <NamesCard overview={overview} />
               <BackupCard overview={overview} />
             </div>
+            <PublishCard overview={overview} onChanged={() => void load()} />
           </>}
   </div>;
 }

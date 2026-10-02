@@ -8,7 +8,7 @@ import {
   nextCheckinDelay, normalizeConsoleUrl, parseCheckin, parseCredentials, versionAtLeast,
 } from "@/lib/cloud-core";
 import { listServers } from "@/lib/docker";
-import { BadRequestError, ConflictError } from "@/lib/errors";
+import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
 import type { OffsiteDestination } from "@/lib/offsite-core";
 import { panelId } from "@/lib/offsite-settings";
 import { panelVersion } from "@/lib/version";
@@ -20,6 +20,8 @@ import { panelVersion } from "@/lib/version";
  */
 
 const STATE = "cloud";
+/** Server IDs left off blockylink.net. Kept apart from the link state, so it survives unlinking and relinking. */
+const UNPUBLISHED = "cloud-unpublished";
 const REQUEST_TIMEOUT_MS = 15_000;
 const isDemo = () => process.env.BLOCKY_DEMO === "true";
 const disabled = () => process.env.BLOCKY_CLOUD === "false" || isDemo();
@@ -170,7 +172,7 @@ async function checkInNow() {
   if (!state.token) return;
   const attemptAt = new Date().toISOString();
   try {
-    const servers = checkinServers(await listServers());
+    const servers = checkinServers(await listServers(), await unpublishedServers());
     const { body } = await call<unknown>("/checkin", { token: state.token, body: { version: panelVersion().version, name: panelName(), servers } });
     const checkin = parseCheckin(body);
     await updateState((current) => {
@@ -213,6 +215,26 @@ export async function cloudTick() {
   if (!state.token) return;
   if (state.nextCheckinAt && Date.now() < new Date(state.nextCheckinAt).getTime()) return;
   await checkIn().catch(() => undefined);
+}
+
+// ---- Which servers get an address ----
+
+export async function unpublishedServers() {
+  return (await accounts()).getSetting<string[]>(UNPUBLISHED) ?? [];
+}
+
+/** Publishes a server on blockylink.net or takes it off, then checks in so DNS follows within a minute. */
+export async function setServerPublished(serverId: string, publish: boolean) {
+  const servers = await listServers();
+  const server = servers.find((item) => item.id === serverId);
+  if (!server) throw new NotFoundError("That server doesn't exist.");
+  // Drop IDs of servers that no longer exist while we're here.
+  const existing = new Set(servers.map((item) => item.id));
+  const current = (await unpublishedServers()).filter((id) => existing.has(id) && id !== serverId);
+  (await accounts()).setSetting(UNPUBLISHED, publish ? current : [...current, serverId]);
+  (await accounts()).audit(await currentActor() || "Admin", publish ? `Published ${server.name} on blockylink.net` : `Took ${server.name} off blockylink.net`);
+  if ((await loadState()).token) await checkIn().catch(() => undefined);
+  return { ok: true };
 }
 
 // ---- Backups ----
@@ -296,6 +318,7 @@ export async function cloudOverview() {
     lastError: state.lastError,
     panelName: panelName(),
     panelId: await panelId(),
+    unpublished: await unpublishedServers(),
     outdated: checkin ? !versionAtLeast(panelVersion().version, checkin.minPanelVersion) : false,
     subscription: checkin?.subscription,
     entitlements: checkin?.entitlements,

@@ -83,6 +83,7 @@ export const API_ACCESS: Record<string, Partial<Record<string, Access>>> = {
   // Blocky Cloud: linking to an account steers this panel's public name and off-site backups.
   "/api/cloud": { GET: "admin", POST: "admin", DELETE: "admin" },
   "/api/cloud/link": { POST: "admin", DELETE: "admin" },
+  "/api/cloud/servers": { PATCH: "admin" },
   "/api/worlds": { GET: "admin" },
   "/api/worlds/[id]": { POST: "admin", DELETE: "admin" },
 };

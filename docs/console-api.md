@@ -67,7 +67,7 @@ point at this panel, unless the owner pinned one.
 }
 ```
 
-Server IDs match `^[A-Za-z0-9-]{1,64}$`. At most 200 servers. Each server becomes an SRV record
+Server IDs match `^[A-Za-z0-9-]{1,64}$`. At most 200 servers. Servers the owner turned off on the panel's Blocky Cloud page aren't sent, so the console removes their records. Each server becomes an SRV record
 `_minecraft._tcp.<label>.<name>.blockylink.net` pointing at `<name>.blockylink.net` and its port. The
 label comes from the server name the first time it's seen and keeps its value after that. The owner
 can rename it on the console.

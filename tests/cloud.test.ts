@@ -84,6 +84,12 @@ test("check-in sends only well-formed servers", () => {
   ]), [{ id: "a7c31e481f20", name: "Survival", port: 25565 }]);
 });
 
+test("servers the owner turned off are left out of check-ins", () => {
+  const servers = [{ id: "a7c31e481f20", name: "Lobby", port: 25565 }, { id: "b19f00aa1c3d", name: "Backend", port: 25566 }];
+  assert.deepEqual(checkinServers(servers, ["b19f00aa1c3d"]).map((server) => server.id), ["a7c31e481f20"]);
+  assert.equal(checkinServers(servers).length, 2, "published by default");
+});
+
 test("backup keys are renewed when they're close to expiring or the console asks", () => {
   const now = Date.parse("2026-10-02T00:00:00Z");
   const backup = parseCheckin(checkin).backup;
