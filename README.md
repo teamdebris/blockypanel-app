@@ -217,12 +217,12 @@ A restore trusts the destination: whatever is in the copy becomes the server's f
 
 ## Blocky Cloud
 
-Blocky Cloud is an optional subscription from the Blocky console. Admins link the panel under **Blocky Cloud**: the panel shows a short code, and you approve it at console.blockypanel.com. Once linked:
+Blocky Cloud is an optional subscription at cloud.blockypanel.com. Admins link the panel under **Blocky Cloud**: the panel shows a short code, and you approve it on Blocky Cloud. Once linked:
 
-- **A name that follows you.** Claim `yourname.blockylink.net` on the console and point it at the panel. Every server gets its own address, like `survival.yourname.blockylink.net`, so players never type a port. The panel checks in every five minutes, so the name keeps up when your IP changes. Game ports still need forwarding on the router. Turn a server off under **Servers on blockylink.net** to leave it without an address, for example a backend behind a Velocity or BungeeCord proxy, or an archived world.
-- **Cloud backup.** Choose **Blocky Cloud** under **Offsite backups**. Keys come from the console and renew automatically, and each one only reaches your account's space. Backups are encrypted with your passphrase before upload, as with any other destination.
+- **A name that follows you.** Claim `yourname.blockylink.net` on Blocky Cloud and point it at the panel. Every server gets its own address, like `survival.yourname.blockylink.net`, so players never type a port. The panel checks in every five minutes, so the name keeps up when your IP changes. Game ports still need forwarding on the router. Turn a server off under **Servers on blockylink.net** to leave it without an address, for example a backend behind a Velocity or BungeeCord proxy, or an archived world.
+- **Cloud backup.** Choose **Blocky Cloud** under **Offsite backups**. Keys come from Blocky Cloud and renew automatically, and each one only reaches your account's space. Backups are encrypted with your passphrase before upload, as with any other destination.
 
-Check-ins send the panel's name and version, and each server's name and game port. Worlds, files, and passwords never leave the machine except as encrypted offsite copies. `BLOCKY_CLOUD=false` turns the feature off, and `BLOCKY_PANEL_NAME` changes the name shown on the console (the machine's host name by default). The API between the panel and the console is in [docs/console-api.md](docs/console-api.md).
+Check-ins send the panel's name and version, and each server's name and game port. Worlds, files, and passwords never leave the machine except as encrypted offsite copies. `BLOCKY_CLOUD=false` turns the feature off, and `BLOCKY_PANEL_NAME` changes the name shown on the console (the machine's host name by default). The API between the panel and Blocky Cloud is in [docs/cloud-api.md](docs/cloud-api.md).
 
 ## Alerts
 
@@ -284,7 +284,7 @@ npm run start    # run the built application
 
 Set `MINECRAFT_IMAGE` to pin a specific `itzg/minecraft-server` image tag; per-server Java versions use the matching `:javaNN` tag of the same repository. `BLOCKY_DEMO=true` runs the UI with fake servers and no Docker.
 
-Running with Node directly, the data folder is `storage/` in the project (`BLOCKY_STORAGE` changes it). If Docker runs on another machine or in a VM that sees that folder under a different path, set `BLOCKY_DOCKER_STORAGE` to the path as Docker sees it; the Compose file does this for you. `BLOCKY_DEV_ORIGINS` lists extra LAN hostnames allowed to load dev resources. `BLOCKY_CLOUD_URL` points Blocky Cloud at a console running elsewhere, like `http://localhost:8000` for a local copy of the console.
+Running with Node directly, the data folder is `storage/` in the project (`BLOCKY_STORAGE` changes it). If Docker runs on another machine or in a VM that sees that folder under a different path, set `BLOCKY_DOCKER_STORAGE` to the path as Docker sees it; the Compose file does this for you. `BLOCKY_DEV_ORIGINS` lists extra LAN hostnames allowed to load dev resources. `BLOCKY_CLOUD_URL` points the panel at another Blocky Cloud site, like `http://localhost:8000` for a local copy.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
 

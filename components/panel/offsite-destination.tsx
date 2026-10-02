@@ -119,7 +119,7 @@ export function DestinationFields({ draft, onChange, errors, sshPublicKey, onSsh
     </div>}
 
     {draft.kind === "cloud" && <div className="space-y-3">
-      <p className="text-xs leading-5 text-muted-foreground">Copies go to Blocky Cloud with a key the console gives this panel. It only reaches your account&apos;s space, and it&apos;s renewed automatically.</p>
+      <p className="text-xs leading-5 text-muted-foreground">Copies go to Blocky Cloud with a key it gives this panel. It only reaches your account&apos;s space, and it&apos;s renewed automatically.</p>
       {cloud && cloud.folders.some((folder) => folder.id !== cloud.panelId) && <Field label="Backups of" id="offsite-cloud-panel" hint="Pick another panel to restore its servers here, for example after moving to a new machine.">{(props) => <Select value={draft.cloudPanel || "this"} onValueChange={(value) => set({ cloudPanel: value === "this" || value === cloud.panelId ? "" : value })}>
         <SelectTrigger {...props} className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>

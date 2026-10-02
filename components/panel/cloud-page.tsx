@@ -17,7 +17,7 @@ type Linking = { userCode: string; verificationUri: string; verificationUriCompl
 type Overview =
   | { enabled: false; reason: string }
   | {
-    enabled: true; consoleUrl: string; linked: boolean; unlinkedRemotely: boolean; linking?: Linking; account?: { email: string }; linkedAt?: string;
+    enabled: true; cloudUrl: string; linked: boolean; unlinkedRemotely: boolean; linking?: Linking; account?: { email: string }; linkedAt?: string;
     lastCheckinAt?: string; lastAttemptAt?: string; nextCheckinAt?: string; lastError?: string; panelName: string; panelId: string; unpublished: string[]; outdated: boolean;
     subscription?: { state: SubscriptionState; plan: string | null; graceEndsAt: string | null; lapsedAt: string | null };
     entitlements?: { names: number; serversPerName: number; storageBytes: number };
@@ -50,7 +50,7 @@ function LinkCard({ overview, onChanged }: { overview: Enabled; onChanged: () =>
   });
   if (linking && !linking.error && !expired) {
     const seconds = Math.max(0, Math.round((new Date(linking.expiresAt).getTime() - now) / 1000));
-    return <Section title="Approve this panel on the console" description="Sign in to Blocky Cloud and enter this code. This page updates by itself once it's approved.">
+    return <Section title="Approve this panel on Blocky Cloud" description="Sign in to Blocky Cloud and enter this code. This page updates by itself once it's approved.">
       <div className="space-y-5">
         <p className="font-mono text-4xl font-bold tracking-[0.2em]" aria-label={`Code ${linking.userCode.split("").join(" ")}`}>{linking.userCode}</p>
         <div className="flex flex-wrap gap-2">
@@ -63,13 +63,13 @@ function LinkCard({ overview, onChanged }: { overview: Enabled; onChanged: () =>
   }
   return <Section title="Link this panel" description="Blocky Cloud gives your servers a friendly address under blockylink.net that follows this machine's IP, and keeps encrypted backups off-site.">
     <div className="space-y-4 text-sm">
-      {overview.unlinkedRemotely && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">This panel was unlinked from the console. Link it again to keep using Blocky Cloud.</p>}
+      {overview.unlinkedRemotely && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">This panel was unlinked from Blocky Cloud. Link it again to keep using Blocky Cloud.</p>}
       {linking?.error && <p role="alert" className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{linking.error}</p>}
       {expired && !linking?.error && <p role="alert" className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">The code expired before it was approved. Start again.</p>}
       <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
-        <li>Create an account at <a className="text-foreground underline" href={overview.consoleUrl} target="_blank" rel="noreferrer">{overview.consoleUrl.replace(/^https?:\/\//, "")}</a>, and turn on two-factor sign-in.</li>
+        <li>Create an account at <a className="text-foreground underline" href={overview.cloudUrl} target="_blank" rel="noreferrer">{overview.cloudUrl.replace(/^https?:\/\//, "")}</a>, and turn on two-factor sign-in.</li>
         <li>Choose <span className="font-medium text-foreground">Link</span> below. The panel shows a short code.</li>
-        <li>Enter the code on the console to approve this panel.</li>
+        <li>Enter the code on Blocky Cloud to approve this panel.</li>
       </ol>
       <Button onClick={start} disabled={isPending("cloud:link")}>{isPending("cloud:link") ? <LoaderCircle className="animate-spin" /> : <Link2 />}Link to Blocky Cloud</Button>
       <p className="text-xs text-muted-foreground">Linking sends this panel&apos;s name ({overview.panelName}), version, and its servers&apos; names and game ports. It never sends worlds, files, or passwords.</p>
@@ -90,7 +90,7 @@ function AccountCard({ overview, onChanged }: { overview: Enabled; onChanged: ()
           catch (error) { toast.error(errorMessage(error, "Check-in failed.")); }
           onChanged();
         })}>{isPending("cloud:checkin") ? <LoaderCircle className="animate-spin" /> : <RefreshCcw />}Check in now</Button>
-        <Button size="sm" variant="outline" asChild><a href={overview.consoleUrl} target="_blank" rel="noreferrer"><ExternalLink />Console</a></Button>
+        <Button size="sm" variant="outline" asChild><a href={overview.cloudUrl} target="_blank" rel="noreferrer"><ExternalLink />Open Blocky Cloud</a></Button>
       </>}>
       <div className="space-y-3 text-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -105,7 +105,7 @@ function AccountCard({ overview, onChanged }: { overview: Enabled; onChanged: ()
         {overview.lastError && <p className="rounded-lg border border-destructive/30 bg-danger-soft px-3 py-2 text-xs text-destructive">{overview.lastError}</p>}
         {overview.outdated && <p className="rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">This panel is older than Blocky Cloud supports. Update it to keep your names and backups working.</p>}
         {overview.notices.map((notice, index) => <p key={index} className={cn("rounded-lg border px-3 py-2 text-xs", notice.level === "error" ? tone.bad : notice.level === "warning" ? tone.warn : tone.muted)}>{notice.message}</p>)}
-        {!subscription || subscription.state === "none" ? <p className="text-xs text-muted-foreground">Names and cloud backup come with a subscription. <a className="underline" href={`${overview.consoleUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
+        {!subscription || subscription.state === "none" ? <p className="text-xs text-muted-foreground">Names and cloud backup come with a subscription. <a className="underline" href={`${overview.cloudUrl}/billing`} target="_blank" rel="noreferrer">See plans</a>.</p> : null}
         <div className="border-t border-border pt-3">
           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmUnlink(true)}><Unlink />Unlink this panel</Button>
         </div>
@@ -121,8 +121,8 @@ function AccountCard({ overview, onChanged }: { overview: Enabled; onChanged: ()
 function NamesCard({ overview }: { overview: Enabled }) {
   const names = overview.names;
   return <Section title="blockylink.net names" description="Players join with these addresses. No port needed: each server has its own SRV record."
-    actions={<Button size="sm" variant="outline" asChild><a href={`${overview.consoleUrl}/names`} target="_blank" rel="noreferrer"><Globe />Manage names</a></Button>}>
-    {names.length === 0 ? <p className="text-sm text-muted-foreground">No name points at this panel yet. Claim one on the console and point it at <span className="font-medium text-foreground">{overview.panelName}</span>. Servers appear here after the next check-in.</p>
+    actions={<Button size="sm" variant="outline" asChild><a href={`${overview.cloudUrl}/names`} target="_blank" rel="noreferrer"><Globe />Manage names</a></Button>}>
+    {names.length === 0 ? <p className="text-sm text-muted-foreground">No name points at this panel yet. Claim one on Blocky Cloud and point it at <span className="font-medium text-foreground">{overview.panelName}</span>. Servers appear here after the next check-in.</p>
       : <div className="space-y-4">{names.map((name) => <div key={name.fqdn} className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-semibold">{name.fqdn}</span>
@@ -210,7 +210,7 @@ export function CloudPage() {
   }, [overview, wasLinked]);
 
   return <div className="space-y-6">
-    <PageHeading eyebrow="Blocky Cloud" title="Blocky Cloud" description="A friendly address for your servers and off-site backups, from an account on the Blocky console." />
+    <PageHeading eyebrow="Blocky Cloud" title="Blocky Cloud" description="A friendly address for your servers and off-site backups, from a Blocky Cloud account." />
     {error && <p role="alert" className="rounded-xl border border-destructive/30 bg-danger-soft p-4 text-sm text-destructive">{error}</p>}
     {!overview ? <Skeleton className="h-64" />
       : !overview.enabled ? <Section title="Not available"><p className="text-sm text-muted-foreground">{overview.reason}</p></Section>

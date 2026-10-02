@@ -5,7 +5,7 @@ import { currentActor } from "@/lib/actor";
 import { accounts } from "@/lib/auth";
 import {
   type BackupCredentials, type CheckinResponse, checkinServers, cloudAddresses, cloudPrefix, type CloudState, needsNewCredentials,
-  nextCheckinDelay, normalizeConsoleUrl, parseCheckin, parseCredentials, versionAtLeast,
+  nextCheckinDelay, normalizeCloudUrl, parseCheckin, parseCredentials, versionAtLeast,
 } from "@/lib/cloud-core";
 import { listServers } from "@/lib/docker";
 import { BadRequestError, ConflictError, NotFoundError } from "@/lib/errors";
@@ -14,9 +14,9 @@ import { panelId } from "@/lib/offsite-settings";
 import { panelVersion } from "@/lib/version";
 
 /**
- * Blocky Cloud: linking this panel to an account on the console, checking in every five minutes so
+ * Blocky Cloud: linking this panel to a Blocky Cloud account, checking in every five minutes so
  * its blockylink.net name follows this machine's address, and fetching Blocky Cloud backup keys.
- * The console's side is a separate project; docs/console-api.md is the contract between them.
+ * The Blocky Cloud site is a separate project (blockypanel-cloud); docs/cloud-api.md is the contract between them.
  */
 
 const STATE = "cloud";
@@ -30,17 +30,17 @@ type Linking = { deviceCode: string; userCode: string; verificationUri: string; 
 type Runtime = { linking?: Linking; checkingIn?: Promise<void> };
 const runtime = (globalThis as typeof globalThis & { __blockyCloud?: Runtime }).__blockyCloud ??= {};
 
-export class ConsoleError extends Error {
+export class CloudError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
 
-function consoleUrl() {
-  return normalizeConsoleUrl(process.env.BLOCKY_CLOUD_URL);
+function cloudUrl() {
+  return normalizeCloudUrl(process.env.BLOCKY_CLOUD_URL);
 }
 
 async function loadState(): Promise<CloudState> {
   const saved = (await accounts()).getSetting<CloudState>(STATE);
-  return saved ?? { consoleUrl: consoleUrl(), failures: 0 };
+  return saved ?? { cloudUrl: cloudUrl(), failures: 0 };
 }
 
 async function saveState(state: CloudState | undefined) {
@@ -59,11 +59,11 @@ function panelName() {
   return (process.env.BLOCKY_PANEL_NAME || hostname() || "Blocky Panel").slice(0, 100);
 }
 
-/** One call to the console. Errors carry the console's own message when it sent one. */
+/** One call to Blocky Cloud. Errors carry its own message when it sent one. */
 async function call<T>(path: string, init: { method?: string; body?: unknown; token?: string } = {}): Promise<{ status: number; body: T }> {
   let response: Response;
   try {
-    response = await fetch(`${consoleUrl()}/v1${path}`, {
+    response = await fetch(`${cloudUrl()}/v1${path}`, {
       method: init.method || "POST",
       headers: {
         Accept: "application/json",
@@ -77,11 +77,11 @@ async function call<T>(path: string, init: { method?: string; body?: unknown; to
     });
   } catch (error) {
     const reason = error instanceof Error && error.name === "TimeoutError" ? "it didn't answer in time" : "it couldn't be reached";
-    throw new ConsoleError(`Blocky Cloud is unavailable right now (${reason}). The panel keeps working and tries again shortly.`, 0);
+    throw new CloudError(`Blocky Cloud is unavailable right now (${reason}). The panel keeps working and tries again shortly.`, 0);
   }
   const body = await response.json().catch(() => ({})) as T & { error?: string; message?: string };
   if (response.status >= 400 && response.status !== 410) {
-    throw new ConsoleError(body?.message || (typeof body?.error === "string" && body.error.length > 20 ? body.error : `Blocky Cloud answered with an error (${response.status}).`), response.status, typeof body?.error === "string" ? body.error : undefined);
+    throw new CloudError(body?.message || (typeof body?.error === "string" && body.error.length > 20 ? body.error : `Blocky Cloud answered with an error (${response.status}).`), response.status, typeof body?.error === "string" ? body.error : undefined);
   }
   return { status: response.status, body };
 }
@@ -106,22 +106,22 @@ async function pollLink(linking: Linking) {
     if (runtime.linking !== linking) return;
     if (status === 202) { schedulePoll(linking); return; }
     if (status === 410 || !body.token || !/^[a-f0-9]{64}$/.test(body.token)) {
-      linking.error = body.message || "The console didn't accept this link request. Start again.";
+      linking.error = body.message || "Blocky Cloud didn't accept this link request. Start again.";
       return;
     }
-    await saveState({ consoleUrl: consoleUrl(), token: body.token, account: body.account, linkedAt: new Date().toISOString(), failures: 0 });
+    await saveState({ cloudUrl: cloudUrl(), token: body.token, account: body.account, linkedAt: new Date().toISOString(), failures: 0 });
     (await accounts()).audit(linking.actor || "Admin", `Linked this panel to Blocky Cloud${body.account?.email ? ` (${body.account.email})` : ""}`);
     stopLinking();
     await checkIn().catch(() => undefined);
   } catch (error) {
     if (runtime.linking !== linking) return;
     // A blip while polling isn't fatal: keep trying until the code expires.
-    if (error instanceof ConsoleError && error.status === 0) { schedulePoll(linking); return; }
+    if (error instanceof CloudError && error.status === 0) { schedulePoll(linking); return; }
     linking.error = error instanceof Error ? error.message : "Linking failed. Start again.";
   }
 }
 
-/** Asks the console for a code to show the owner, and polls until it's approved. */
+/** Asks Blocky Cloud for a code to show the owner, and polls until it's approved. */
 export async function startLink() {
   if (disabled()) throw new BadRequestError("Blocky Cloud is turned off on this panel.");
   if ((await loadState()).token) throw new ConflictError("This panel is already linked. Unlink it first.");
@@ -129,10 +129,10 @@ export async function startLink() {
   const { body } = await call<{ deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete: string; expiresIn: number; interval: number }>("/link/start", {
     body: { panelId: await panelId(), name: panelName(), version: panelVersion().version },
   });
-  if (!/^[a-f0-9]{64}$/.test(body.deviceCode || "") || !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(body.userCode || "")) throw new ConsoleError("Blocky Cloud sent a link code this panel doesn't understand.", 502);
+  if (!/^[a-f0-9]{64}$/.test(body.deviceCode || "") || !/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(body.userCode || "")) throw new CloudError("Blocky Cloud sent a link code this panel doesn't understand.", 502);
   const linking: Linking = {
     deviceCode: body.deviceCode, userCode: body.userCode,
-    verificationUri: safeConsoleLink(body.verificationUri, "/link"), verificationUriComplete: safeConsoleLink(body.verificationUriComplete, `/link?code=${body.userCode}`),
+    verificationUri: safeCloudLink(body.verificationUri, "/link"), verificationUriComplete: safeCloudLink(body.verificationUriComplete, `/link?code=${body.userCode}`),
     expiresAt: Date.now() + Math.min(Math.max(Number(body.expiresIn) || 600, 60), 1800) * 1000,
     interval: Math.min(Math.max(Number(body.interval) || 5, 2), 30),
     actor: await currentActor(),
@@ -142,9 +142,9 @@ export async function startLink() {
   return publicLinking(linking);
 }
 
-/** Links shown to the owner must point at the console itself, whatever the console sends. */
-function safeConsoleLink(value: unknown, fallbackPath: string) {
-  const base = consoleUrl();
+/** Links shown to the owner must point at Blocky Cloud itself, whatever it sends. */
+function safeCloudLink(value: unknown, fallbackPath: string) {
+  const base = cloudUrl();
   return typeof value === "string" && (value === base || value.startsWith(`${base}/`)) ? value : `${base}${fallbackPath}`;
 }
 
@@ -156,7 +156,7 @@ function publicLinking(linking: Linking) {
   return { userCode: linking.userCode, verificationUri: linking.verificationUri, verificationUriComplete: linking.verificationUriComplete, expiresAt: new Date(linking.expiresAt).toISOString(), error: linking.error };
 }
 
-/** Unlinks: tells the console (best effort), then forgets the token and keys. */
+/** Unlinks: tells Blocky Cloud (best effort), then forgets the token and keys. */
 export async function unlink() {
   const state = await loadState();
   stopLinking();
@@ -186,9 +186,9 @@ async function checkInNow() {
       current.nextCheckinAt = new Date(Date.now() + nextCheckinDelay(0, checkin.nextCheckinSeconds) * 1000).toISOString();
     });
   } catch (error) {
-    if (error instanceof ConsoleError && error.status === 401) {
-      // Unlinked from the console's side: the token is dead, so stop using it.
-      await saveState({ consoleUrl: state.consoleUrl, failures: 0, unlinkedRemotely: true });
+    if (error instanceof CloudError && error.status === 401) {
+      // Unlinked from Blocky Cloud's side: the token is dead, so stop using it.
+      await saveState({ cloudUrl: state.cloudUrl, failures: 0, unlinkedRemotely: true });
       return;
     }
     await updateState((current) => {
@@ -241,26 +241,26 @@ export async function setServerPublished(serverId: string, publish: boolean) {
 
 async function freshCredentials(state: CloudState): Promise<BackupCredentials> {
   if (!state.token) throw new BadRequestError("This panel isn't linked to Blocky Cloud. Link it on the Blocky Cloud page first.");
-  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe on the console to use it.");
+  if (state.checkin && !state.checkin.backup.available) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
   if (!needsNewCredentials(state.credentials, state.checkin?.backup)) return state.credentials!;
   let body: unknown;
   try { body = (await call<unknown>("/backup/credentials", { token: state.token })).body; }
   catch (error) {
-    if (error instanceof ConsoleError && error.status === 403) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe on the console to use it.");
+    if (error instanceof CloudError && error.status === 403) throw new BadRequestError("Blocky Cloud backup isn't part of this account's plan. Subscribe at cloud.blockypanel.com to use it.");
     throw error;
   }
   const credentials = parseCredentials(body);
   await updateState((current) => {
     if (current.token !== state.token) return;
     current.credentials = credentials;
-    // The console asked for new keys at the last check-in; these are them.
+    // Blocky Cloud asked for new keys at the last check-in; these are them.
     if (current.checkin?.backup.available) current.checkin.backup.renewCredentials = false;
   });
   return credentials;
 }
 
 /**
- * The B2 destination behind a "Blocky Cloud" offsite destination, with a key from the console. The
+ * The B2 destination behind a "Blocky Cloud" offsite destination, with a key from Blocky Cloud. The
  * key never reaches the offsite settings; it's fetched (and renewed) here each time it's needed.
  */
 export async function cloudBackupDestination(panelFolder?: string): Promise<Extract<OffsiteDestination, { kind: "s3" }>> {
@@ -306,7 +306,7 @@ export async function cloudOverview() {
   const checkin = state.checkin;
   return {
     enabled: true as const,
-    consoleUrl: consoleUrl(),
+    cloudUrl: cloudUrl(),
     linked: Boolean(state.token),
     unlinkedRemotely: Boolean(state.unlinkedRemotely),
     linking: runtime.linking ? publicLinking(runtime.linking) : undefined,

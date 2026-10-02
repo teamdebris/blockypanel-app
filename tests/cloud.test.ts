@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  type BackupCredentials, checkinServers, cloudAddresses, cloudPrefix, needsNewCredentials, nextCheckinDelay, normalizeConsoleUrl, parseCheckin, parseCredentials, versionAtLeast,
+  type BackupCredentials, checkinServers, cloudAddresses, cloudPrefix, needsNewCredentials, nextCheckinDelay, normalizeCloudUrl, parseCheckin, parseCredentials, versionAtLeast,
 } from "../lib/cloud-core.ts";
 import { describeDestination, repositoryFor } from "../lib/offsite-core.ts";
 
-// Shaped like the console's POST /v1/checkin response (blockypanel-console, CheckinController).
+// Shaped like Blocky Cloud's POST /v1/checkin response (blockypanel-cloud, CheckinController).
 const checkin = {
   account: { email: "alex@example.com" },
   subscription: { state: "active", plan: "standard", graceEndsAt: null, lapsedAt: null },
@@ -28,16 +28,16 @@ const credentials: BackupCredentials = {
   endpoint: "s3.us-west-004.backblazeb2.com", prefix: "accounts/01jabc/", readOnly: false, expiresAt: "2026-12-01T00:00:00+00:00",
 };
 
-test("the console address must be https, except on this machine", () => {
-  assert.equal(normalizeConsoleUrl(undefined), "https://console.blockypanel.com");
-  assert.equal(normalizeConsoleUrl("https://console.example.com/"), "https://console.example.com");
-  assert.equal(normalizeConsoleUrl("http://localhost:8000"), "http://localhost:8000");
-  assert.throws(() => normalizeConsoleUrl("http://console.example.com"), /https/);
-  assert.throws(() => normalizeConsoleUrl("https://user:pass@console.example.com"), /credentials/);
-  assert.throws(() => normalizeConsoleUrl("not a url"), /valid URL/);
+test("the Blocky Cloud address must be https, except on this machine", () => {
+  assert.equal(normalizeCloudUrl(undefined), "https://cloud.blockypanel.com");
+  assert.equal(normalizeCloudUrl("https://console.example.com/"), "https://console.example.com");
+  assert.equal(normalizeCloudUrl("http://localhost:8000"), "http://localhost:8000");
+  assert.throws(() => normalizeCloudUrl("http://console.example.com"), /https/);
+  assert.throws(() => normalizeCloudUrl("https://user:pass@console.example.com"), /credentials/);
+  assert.throws(() => normalizeCloudUrl("not a url"), /valid URL/);
 });
 
-test("check-ins follow the console's schedule and back off on failure", () => {
+test("check-ins follow Blocky Cloud's schedule and back off on failure", () => {
   assert.equal(nextCheckinDelay(0), 300);
   assert.equal(nextCheckinDelay(0, 10), 60, "never more often than once a minute");
   assert.equal(nextCheckinDelay(0, 99_999), 3600);
@@ -90,7 +90,7 @@ test("servers the owner turned off are left out of check-ins", () => {
   assert.equal(checkinServers(servers).length, 2, "published by default");
 });
 
-test("backup keys are renewed when they're close to expiring or the console asks", () => {
+test("backup keys are renewed when they're close to expiring or Blocky Cloud asks", () => {
   const now = Date.parse("2026-10-02T00:00:00Z");
   const backup = parseCheckin(checkin).backup;
   assert.ok(needsNewCredentials(undefined, backup, now));

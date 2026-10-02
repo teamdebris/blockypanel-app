@@ -1,12 +1,12 @@
-# Blocky Cloud console API
+# Blocky Cloud API
 
-The contract between a self-hosted panel (`lib/cloud.ts`) and the Blocky console
-(console.blockypanel.com, a separate Laravel project). All endpoints are under `/v1`, take and return
+The contract between a self-hosted panel (`lib/cloud.ts`) and Blocky Cloud
+(cloud.blockypanel.com, a separate Laravel project). All endpoints are under `/v1`, take and return
 JSON, and are served over HTTPS only. The panel sets `BLOCKY_CLOUD_URL` to point elsewhere for
 development (http is allowed only for localhost).
 
-The panel authenticates with a bearer token after linking. The token is 64 hex characters. The
-console stores only its SHA-256 hash, so it can't be recovered, only replaced by linking again.
+The panel authenticates with a bearer token after linking. The token is 64 hex characters.
+Blocky Cloud stores only its SHA-256 hash, so it can't be recovered, only replaced by linking again.
 
 ## Linking (device code, RFC 8628)
 
@@ -27,15 +27,15 @@ the same panel to the same account again keeps its names.
 {
   "deviceCode": "<64 hex>",
   "userCode": "KQ7M-4XRT",
-  "verificationUri": "https://console.blockypanel.com/link",
-  "verificationUriComplete": "https://console.blockypanel.com/link?code=KQ7M-4XRT",
+  "verificationUri": "https://cloud.blockypanel.com/link",
+  "verificationUriComplete": "https://cloud.blockypanel.com/link?code=KQ7M-4XRT",
   "expiresIn": 600,
   "interval": 5
 }
 ```
 
 The panel shows `userCode` and a link to `verificationUriComplete`. It only opens links that start
-with its configured console address.
+with its configured Blocky Cloud address.
 
 ### `POST /v1/link/token`
 
@@ -55,8 +55,8 @@ No token. The panel polls this every `interval` seconds.
 
 ### `POST /v1/checkin`
 
-Every five minutes (the console's `nextCheckinSeconds`), with backoff from 1 to 60 minutes after
-failures. The console takes the caller's IPv4 address as the address for the account's names that
+Every five minutes (Blocky Cloud's `nextCheckinSeconds`), with backoff from 1 to 60 minutes after
+failures. Blocky Cloud takes the caller's IPv4 address as the address for the account's names that
 point at this panel, unless the owner pinned one.
 
 ```json
@@ -67,10 +67,10 @@ point at this panel, unless the owner pinned one.
 }
 ```
 
-Server IDs match `^[A-Za-z0-9-]{1,64}$`. At most 200 servers. Servers the owner turned off on the panel's Blocky Cloud page aren't sent, so the console removes their records. Each server becomes an SRV record
+Server IDs match `^[A-Za-z0-9-]{1,64}$`. At most 200 servers. Servers the owner turned off on the panel's Blocky Cloud page aren't sent, so Blocky Cloud removes their records. Each server becomes an SRV record
 `_minecraft._tcp.<label>.<name>.blockylink.net` pointing at `<name>.blockylink.net` and its port. The
 label comes from the server name the first time it's seen and keeps its value after that. The owner
-can rename it on the console.
+can rename it on Blocky Cloud.
 
 `200`:
 
@@ -102,7 +102,7 @@ can rename it on the console.
   so a replacement panel can restore them.
 
 `401 { "error": "unlinked" }` means the token is no longer valid, for example because the panel was
-unlinked from the console. The panel forgets the token and shows that it was unlinked.
+unlinked from Blocky Cloud. The panel forgets the token and shows that it was unlinked.
 
 ## Blocky Cloud backup
 

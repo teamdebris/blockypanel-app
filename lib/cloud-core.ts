@@ -1,10 +1,10 @@
 /**
- * Pure helpers for Blocky Cloud: the console's responses, check-in timing, which credentials are
+ * Pure helpers for Blocky Cloud: its responses, check-in timing, which credentials are
  * still good, and the addresses players use. Shared by the server, the UI, and tests. The API
- * contract is in docs/console-api.md.
+ * contract is in docs/cloud-api.md.
  */
 
-export const DEFAULT_CONSOLE_URL = "https://console.blockypanel.com";
+export const DEFAULT_CLOUD_URL = "https://cloud.blockypanel.com";
 export const CHECKIN_SECONDS = 300;
 const MAX_BACKOFF_SECONDS = 3600;
 /** Fetch a new backup key when the current one has less than this left. */
@@ -39,7 +39,7 @@ export type BackupCredentials = {
 
 /** What the panel keeps in panel.db once linked. The token is the panel's only credential. */
 export type CloudState = {
-  consoleUrl: string;
+  cloudUrl: string;
   token?: string;
   account?: { email: string };
   linkedAt?: string;
@@ -50,13 +50,13 @@ export type CloudState = {
   nextCheckinAt?: string;
   checkin?: CheckinResponse;
   credentials?: BackupCredentials;
-  /** Set when the console reported the panel unlinked (from the console's side). */
+  /** Set when Blocky Cloud reported the panel unlinked (from its side). */
   unlinkedRemotely?: boolean;
 };
 
-/** The console's address: https, or http only for this machine (development). No trailing slash. */
-export function normalizeConsoleUrl(value: string | undefined) {
-  const raw = (value || DEFAULT_CONSOLE_URL).trim().replace(/\/+$/, "");
+/** Blocky Cloud's address: https, or http only for this machine (development). No trailing slash. */
+export function normalizeCloudUrl(value: string | undefined) {
+  const raw = (value || DEFAULT_CLOUD_URL).trim().replace(/\/+$/, "");
   let url: URL;
   try { url = new URL(raw); } catch { throw new Error(`BLOCKY_CLOUD_URL isn't a valid URL: ${raw}`); }
   const local = ["localhost", "127.0.0.1", "[::1]", "host.docker.internal"].includes(url.hostname);
@@ -66,8 +66,8 @@ export function normalizeConsoleUrl(value: string | undefined) {
 }
 
 /**
- * Seconds until the next check-in attempt. Successes follow the console's schedule; failures back
- * off from 1 to 60 minutes, with jitter so a console outage doesn't end in every panel at once.
+ * Seconds until the next check-in attempt. Successes follow Blocky Cloud's schedule; failures back
+ * off from 1 to 60 minutes, with jitter so an outage doesn't end in every panel retrying at once.
  */
 export function nextCheckinDelay(failures: number, suggested = CHECKIN_SECONDS, random = Math.random) {
   if (failures <= 0) return Math.min(Math.max(Math.round(suggested), 60), MAX_BACKOFF_SECONDS);
@@ -102,7 +102,7 @@ export function cloudAddresses(checkin: CheckinResponse | undefined) {
   return addresses;
 }
 
-/** Whether the panel should ask the console for a new backup key before using Blocky Cloud. */
+/** Whether the panel should ask Blocky Cloud for a new backup key before using Blocky Cloud. */
 export function needsNewCredentials(credentials: BackupCredentials | undefined, backup: CloudBackupStatus | undefined, now = Date.now()) {
   if (!credentials) return true;
   if (backup?.available && backup.renewCredentials) return true;
@@ -123,7 +123,7 @@ const SERVER_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 /**
  * What check-in sends: each server's ID, name, and game port. Servers the owner chose not to publish
- * (backends behind a proxy, archived worlds) are left out, so the console removes their records.
+ * (backends behind a proxy, archived worlds) are left out, so Blocky Cloud removes their records.
  */
 export function checkinServers(servers: { id: string; name: string; port: number }[], unpublished: readonly string[] = []) {
   const hidden = new Set(unpublished);
