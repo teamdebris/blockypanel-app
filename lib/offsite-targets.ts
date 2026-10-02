@@ -9,7 +9,7 @@ import { PassThrough } from "node:stream";
 import Docker from "dockerode";
 import { BadRequestError } from "@/lib/errors";
 import { repositoryFor, scrubSecrets, secretsOf, type OffsiteDestination } from "@/lib/offsite-core";
-import { directRunner, ResticError, type RunOptions, type Runner } from "@/lib/offsite-restic";
+import { directRunner, isAccessProblem, ResticError, type RunOptions, type Runner } from "@/lib/offsite-restic";
 import { DOCKER_STORAGE_ROOT, PANEL_ROOT, resticCachePath, serverBackupPath, serverDataPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 
 /**
@@ -205,8 +205,16 @@ async function sftpRunner(destination: Extract<OffsiteDestination, { kind: "sftp
 export async function targetFor(destination: OffsiteDestination): Promise<Target> {
   // Blocky Cloud is a B2 bucket whose key comes from the console, fetched (or renewed) right now.
   if (destination.kind === "cloud") {
-    const { cloudBackupDestination } = await import("@/lib/cloud");
-    return targetFor(await cloudBackupDestination(destination.panel));
+    const { cloudBackupDestination, forgetCloudCredentials } = await import("@/lib/cloud");
+    const target = await targetFor(await cloudBackupDestination(destination.panel));
+    // A refused key (deleted at Backblaze, or revoked) is dropped, so the next attempt gets a new one.
+    return {
+      ...target,
+      runner: { ...target.runner, run: (args, options) => target.runner.run(args, options).catch(async (error: unknown) => {
+        if (isAccessProblem(error)) await forgetCloudCredentials();
+        throw error;
+      }) },
+    };
   }
   let runner: Runner;
   let folderRoot: string | undefined;

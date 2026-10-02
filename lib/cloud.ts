@@ -271,6 +271,11 @@ export async function cloudBackupDestination(panelFolder?: string): Promise<Extr
   };
 }
 
+/** Drops the stored backup key, so the next use asks Blocky Cloud for a new one. */
+export async function forgetCloudCredentials() {
+  await updateState((state) => { state.credentials = undefined; });
+}
+
 /** How many copies a day the account's plan allows to Blocky Cloud, or null for no limit. */
 export async function cloudCopiesPerDay() {
   const backup = (await loadState()).checkin?.backup;
