@@ -124,6 +124,21 @@ test("a key signs in, and files upload, list, download, rename, and delete", asy
   assert.ok(last.deleted.includes("plugins/config/hello.yml"));
 });
 
+test("replies to pipelined writes come back in the order they were sent", async () => {
+  // WinSCP drops the connection ("Received SSH2_MSG_CHANNEL_DATA for nonexistent channel 0") when
+  // replies to its pipelined writes overtake each other, so the server answers in arrival order.
+  const { sftp, end, closed } = await connect({ privateKey: clientKey.private });
+  try {
+    const handle = await call<Buffer>((done) => sftp.open("/pipelined.bin", "w", done));
+    const chunk = Buffer.alloc(32 * 1024, 7);
+    const order: number[] = [];
+    await Promise.all(Array.from({ length: 64 }, (_, index) => call<void>((done) => sftp.write(handle, chunk, 0, chunk.length, index * chunk.length, (error) => { order.push(index); done(error); }))));
+    await call<void>((done) => sftp.close(handle, done));
+    assert.deepEqual(order, Array.from({ length: 64 }, (_, index) => index));
+    assert.equal((await readFile(path.join(root, "pipelined.bin"))).length, 64 * chunk.length);
+  } finally { end(); await closed; }
+});
+
 test("paths above the root land inside it, and nothing outside is reachable", async () => {
   const { sftp, end, closed } = await connect({ password: "correct-sftp-password" });
   try {
