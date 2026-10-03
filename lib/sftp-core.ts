@@ -163,9 +163,14 @@ function serve(sftp: SFTPWrapper, user: SftpUser, summary: SessionSummary, limit
     if (list.length < 200 && !list.includes(entry)) list.push(entry);
   }
 
+  // Requests are handled one at a time, in the order they arrive, so replies go out in that order
+  // too. The protocol allows any order, but WinSCP drops the connection ("Received
+  // SSH2_MSG_CHANNEL_DATA for nonexistent channel 0") when replies to its pipelined writes overtake
+  // each other. Each request is small (at most one read or write of a chunk), so this costs little.
+  let queue: Promise<void> = Promise.resolve();
   function run(reqid: number, work: () => Promise<void>) {
     touch();
-    void (async () => {
+    queue = queue.then(async () => {
       try {
         if (!(await stillAllowed())) { sftp.status(reqid, STATUS_CODE.PERMISSION_DENIED, "Access was revoked"); revoke(); return; }
         await work();
@@ -173,7 +178,7 @@ function serve(sftp: SFTPWrapper, user: SftpUser, summary: SessionSummary, limit
         const [code, message] = statusFor(error);
         try { sftp.status(reqid, code, message); } catch { /* channel closed */ }
       }
-    })();
+    });
   }
 
   function addHandle(state: HandleState) {
@@ -478,8 +483,8 @@ export function createSftpServer(options: { hostKey: string | Buffer; auth: Sftp
       const signedIn = user;
       client.on("session", (acceptSession) => {
         const session = acceptSession();
-        session.on("sftp", (acceptSftp) => {
-          if (closeHandles) return; // one SFTP channel per connection
+        session.on("sftp", (acceptSftp, rejectSftp) => {
+          if (closeHandles) { rejectSftp?.(); return; } // one SFTP channel per connection
           closeHandles = serve(acceptSftp(), signedIn, summary, limits, touch, () => client.end());
         });
         session.on("shell", (_accept, reject) => reject());
