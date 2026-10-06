@@ -251,14 +251,6 @@ Running with Node directly, the data folder is `storage/` in the project (`BLOCK
 
 [docs/ARCHITECTURE.md](ARCHITECTURE.md) explains how the code is organized, and what to run before a pull request.
 
-## How AI was used in the creation of this project
+## AI assistance
 
-Blocky Panel was built with agentic AI coding tools working alongside a human maintainer. They were used as:
-
-- **Security scanner:** reviewing every API route, the file manager, Docker and RCON calls, backups, and the offsite flow against a threat model (unauthenticated visitors, each role, a compromised Minecraft container, hostile archives, a tampered offsite destination), and proposing fixes.
-- **Code verifier:** tracing request paths end to end, checking that the permission table covers every route, and writing regression tests for the things that matter (hostile archives, symlink swaps, token replay, throttling, time zones).
-- **Code cleaner:** removing duplication, simplifying control flow, and keeping error handling and naming consistent across modules.
-- **Code formatter:** keeping style uniform and comments accurate as the code changed.
-- **Documentation and tests:** drafting the README and this guide, the architecture notes, and unit tests for the pure modules.
-
-Everything they produced was reviewed, run, and tested before it was merged, and the maintainer makes the release decisions.
+How AI was used, and which models, is in the [README](../README.md#ai-assistance).
