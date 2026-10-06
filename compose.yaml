@@ -1,0 +1,49 @@
+services:
+  blocky:
+    # Pin a release with BLOCKY_VERSION in .env (e.g. 0.1.0); compose.build.yaml builds from source instead.
+    image: ghcr.io/teamdebris/blockypanel-app:${BLOCKY_VERSION:-latest}
+    container_name: blocky-panel
+    # Everything you might change lives in .env (see .env.example). Nothing here needs editing.
+    environment:
+      # Where the data folder is on this machine. The panel needs it because it asks Docker to mount
+      # each server's world into its container, and Docker resolves paths on the host, not in here.
+      BLOCKY_DOCKER_STORAGE: ${BLOCKY_HOST_STORAGE:-/opt/blocky-panel}
+      MINECRAFT_IMAGE: ${MINECRAFT_IMAGE:-itzg/minecraft-server:latest}
+      BLOCKY_ADMIN_PASSWORD: ${BLOCKY_ADMIN_PASSWORD:?Set BLOCKY_ADMIN_PASSWORD in .env}
+      BLOCKY_COOKIE_SECURE: ${BLOCKY_COOKIE_SECURE:-false}
+      BLOCKY_TRUST_PROXY: ${BLOCKY_TRUST_PROXY:-false}
+      BLOCKY_STARTUP_TIMEOUT_SECONDS: ${BLOCKY_STARTUP_TIMEOUT_SECONDS:-180}
+      BLOCKY_PUBLIC_HOST: ${BLOCKY_PUBLIC_HOST:-}
+      BLOCKY_WEBHOOK_URL: ${BLOCKY_WEBHOOK_URL:-}
+      BLOCKY_SFTP: ${BLOCKY_SFTP:-true}
+      BLOCKY_ISOLATE_SERVERS: ${BLOCKY_ISOLATE_SERVERS:-true}
+      BLOCKY_SFTP_PORT: ${BLOCKY_SFTP_PORT:-2022}
+      BLOCKY_CLOUD: ${BLOCKY_CLOUD:-true}
+      BLOCKY_PANEL_NAME: ${BLOCKY_PANEL_NAME:-}
+    ports:
+      # Reachable from the LAN by default. Behind a reverse proxy, set BLOCKY_BIND_ADDRESS=127.0.0.1 in .env.
+      - "${BLOCKY_BIND_ADDRESS:-0.0.0.0}:3000:3000"
+      # SFTP for server files (FileZilla, WinSCP). Follows BLOCKY_BIND_ADDRESS unless BLOCKY_SFTP_BIND_ADDRESS is set.
+      - "${BLOCKY_SFTP_BIND_ADDRESS:-${BLOCKY_BIND_ADDRESS:-0.0.0.0}}:${BLOCKY_SFTP_PORT:-2022}:${BLOCKY_SFTP_PORT:-2022}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The data folder, mounted where the image keeps its data (/var/lib/blocky).
+      - ${BLOCKY_HOST_STORAGE:-/opt/blocky-panel}:/var/lib/blocky
+    restart: unless-stopped
+    # Limits the damage of a panel bug. It can't contain a compromise: access to the Docker socket is
+    # root-equivalent on a standard (rootful) Docker host. Rootless Docker is what isolates the host.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN        # hands server folders to the game's user
+      - DAC_OVERRIDE # reads and writes files owned by game users
+      - FOWNER       # sets permissions and times on those files (restores)
+      - FSETID       # keeps setgid bits when restic restores files
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

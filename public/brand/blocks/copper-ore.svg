@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Copper ore block">
+<title>Blocky Copper ore block</title>
+<path fill="#829396" d="M6 18 32 31v31L6 49Z"/>
+<path fill="#60767B" d="M32 31 58 18v31L32 62Z"/>
+<path fill="#9FADAA" d="M32 5 58 18 32 31 6 18Z"/>
+
+<path fill="#BEC8C2" d="M32 5 6 18l13 6 19-16Z"/>
+<path fill="#90A29F" d="m39 8 19 10-26 13-9-5 17-8-9-5Z"/>
+<path fill="#C88756" d="m25 11 7-3 7 4-7 4ZM12 33l8 4 4 8-7-2Z"/>
+<path fill="#E7AA70" d="m20 14 5-3 7 5-6 3ZM13 33l5 3 2 5-5-2Z"/>
+<path fill="#B7784F" d="m42 33 9-5 3 6-9 5ZM34 49l7-4 6 7-7 4Z"/>
+<path fill="#D99663" d="m44 32 7-4 2 4-7 4ZM35 48l6-3 3 4-6 3Z"/>
+<path fill="#71878A" d="m6 46 17 9 9-3v10L6 49Z"/>
+<path fill="none" stroke="#D1D8D1" stroke-width="1.2" d="m6 18 26 13 26-13"/>
+</svg>

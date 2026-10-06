@@ -1,0 +1,16 @@
+# Weekly update pull requests, so pinned actions, the base image, and dependencies don't go stale.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    target-branch: dev
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: dev
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: dev

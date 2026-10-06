@@ -1,0 +1,209 @@
+import { S3_PROVIDERS, type S3Provider } from "./offsite-core.ts";
+import { MAX_EXTRA_PORTS, ownPortProblem } from "./ports.ts";
+import { isTimeZone } from "./tasks.ts";
+import { isSafeSeed } from "./world.ts";
+import { z } from "zod";
+
+const MEMORY_OPTIONS = ["1G", "2G", "4G", "6G", "8G", "12G", "16G", "24G", "32G"] as const;
+
+export const SERVER_TYPES = ["PAPER", "PURPUR", "VANILLA", "FABRIC", "QUILT", "FORGE", "NEOFORGE"] as const;
+export const JAVA_VERSIONS = ["auto", "25", "21", "17", "11", "8"] as const;
+
+// Keys the panel manages itself, or that would break backups (RCON) or the port mapping if overridden.
+const managedPropertyKeys = new Set([
+  "view-distance", "simulation-distance", "pause-when-empty-seconds",
+  "gamemode", "pvp", "hardcore", "allow-flight", "enable-command-block", "online-mode", "spawn-protection",
+]);
+export const GAME_MODES = ["survival", "creative", "adventure", "spectator"] as const;
+const protectedPropertyKeys = new Set(["enable-rcon", "rcon.port", "rcon.password", "server-port", "enable-query", "query.port"]);
+
+function propertyKeys(value: string) {
+  return value.split("\n").filter((line) => line.trim()).map((line) => line.split("=", 1)[0].trim().toLowerCase());
+}
+
+const extraPortSchema = z.object({
+  port: z.number().int().min(1024, "Use a port from 1024 to 65535.").max(65535, "Use a port from 1024 to 65535."),
+  protocol: z.enum(["tcp", "udp"]),
+  target: z.number().int().min(1).max(65535).optional(),
+  label: z.string().trim().max(40).default(""),
+  preset: z.enum(["bluemap", "voicechat", "geyser"]).optional(),
+}).transform((entry) => ({ ...entry, target: entry.target ?? entry.port }));
+
+const serverSchema = z.object({
+  name: z.string().trim().min(2).max(60),
+  type: z.enum(SERVER_TYPES),
+  version: z.string().trim().min(1).max(30).regex(/^[a-zA-Z0-9._-]+$/),
+  javaVersion: z.enum(JAVA_VERSIONS).default("auto"),
+  memory: z.enum(MEMORY_OPTIONS),
+  cpuLimit: z.number().min(0).max(64).multipleOf(0.25).default(0),
+  port: z.number().int().min(1024).max(65535),
+  difficulty: z.enum(["peaceful", "easy", "normal", "hard"]),
+  maxPlayers: z.number().int().min(1).max(500),
+  whitelist: z.array(z.string().trim().min(1).max(36).regex(/^[a-zA-Z0-9_-]+$/, "Whitelist entries must be usernames or UUIDs.")).max(100).default([]),
+  seed: z.string().trim().max(64).refine(isSafeSeed, "The seed can't contain line breaks.").default(""),
+  motd: z.string().trim().min(1).max(160).default("A Minecraft Server powered by Blocky"),
+  customProperties: z.string().max(4000)
+    .refine((value) => value.split("\n").every((line) => !line.trim() || line.includes("=")), "Custom properties must use key=value, one per line.")
+    .superRefine((value, context) => {
+      const key = propertyKeys(value).find((item) => managedPropertyKeys.has(item));
+      if (key) context.addIssue({ code: z.ZodIssueCode.custom, message: `Set ${key} with its own control in the settings, not here.` });
+    })
+    .refine((value) => propertyKeys(value).every((key) => !protectedPropertyKeys.has(key)), "RCON, query, and server-port settings are managed by Blocky and cannot be overridden.")
+    .default(""),
+  initialMemoryPercent: z.number().int().min(5).max(90).default(25),
+  maxMemoryPercent: z.number().int().min(25).max(90).default(75),
+  rollingLogMaxFiles: z.number().int().min(1).max(1000).default(30),
+  viewDistance: z.number().int().min(2).max(32).default(8),
+  simulationDistance: z.number().int().min(2).max(32).default(6),
+  stopAnnounceDelaySeconds: z.number().int().min(0).max(300).default(10),
+  useMeowiceFlags: z.boolean().default(true),
+  pauseWhenEmptySeconds: z.number().int().min(-1).max(86400).default(300),
+  gameMode: z.enum(GAME_MODES).default("survival"),
+  pvp: z.boolean().default(true),
+  hardcore: z.boolean().default(false),
+  allowFlight: z.boolean().default(false),
+  commandBlocks: z.boolean().default(false),
+  onlineMode: z.boolean().default(true),
+  spawnProtection: z.number().int().min(0).max(1000).default(16),
+  modrinthProjects: z.array(z.string().regex(/^[a-zA-Z0-9]{8}$/, "Invalid Modrinth project.")).max(100, "At most 100 plugins or mods.")
+    .transform((ids) => [...new Set(ids)]).default([]),
+  /** UDP on the game port too: Plasmo Voice and the server-list query protocol use it. */
+  gamePortUdp: z.boolean().default(false),
+  extraPorts: z.array(extraPortSchema).max(MAX_EXTRA_PORTS, `At most ${MAX_EXTRA_PORTS} extra ports.`).default([]),
+  eula: z.literal(true),
+});
+
+const heapRange = {
+  message: "Initial heap percentage cannot exceed the maximum heap percentage.",
+  path: ["initialMemoryPercent"],
+};
+
+const distanceRange = {
+  message: "Simulation distance can't be larger than view distance.",
+  path: ["simulationDistance"],
+};
+
+/** A server's own ports must work together (no duplicates, never RCON); clashes with other servers are checked against Docker. */
+function portRules(value: { port: number; gamePortUdp: boolean; extraPorts: { port: number; protocol: "tcp" | "udp"; target: number; label: string }[] }, context: z.RefinementCtx) {
+  const problem = ownPortProblem(value);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["extraPorts"], message: problem });
+}
+
+export const createServerSchema = serverSchema.refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange).superRefine(portRules);
+export const updateServerSchema = serverSchema.omit({ eula: true }).refine((value) => value.initialMemoryPercent <= value.maxMemoryPercent, heapRange).refine((value) => value.simulationDistance <= value.viewDistance, distanceRange).superRefine(portRules);
+/** Single fields of a server's settings, for routes that check one value on its own. */
+export const serverFields = serverSchema.shape;
+
+export const commandSchema = z.object({ command: z.string().trim().min(1).max(512).refine((value) => !/[\u0000\r\n]/.test(value), "Commands must be a single line.") });
+
+// Login plugins (AuthMe and friends) take passwords as arguments; those never reach the activity log.
+const SECRET_COMMANDS = new Set(["login", "l", "log", "register", "reg", "changepassword", "changepass", "changepw", "cp", "unregister", "unreg", "passwd", "password", "setpassword", "resetpassword", "2fa", "totp"]);
+
+/** A console command as the activity log shows it: arguments are hidden for commands that can carry a password. */
+export function consoleCommandForLog(command: string) {
+  const text = command.trim().replace(/^\/+/, "");
+  const name = text.split(/\s+/, 1)[0];
+  const bare = name.toLowerCase().replace(/^[a-z0-9_.-]+:/, ""); // "authme:login" is still login
+  const hasArguments = text.length > name.length;
+  if (hasArguments && (SECRET_COMMANDS.has(bare) || /pass|secret|token/i.test(text))) return `/${name.slice(0, 64)} (arguments hidden)`;
+  return `/${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
+}
+export const actionSchema = z.object({ action: z.enum(["start", "stop", "restart", "backup", "update"]) });
+export const backupNameSchema = z.string().regex(/^snapshot-[0-9a-f]{64}$/, "Invalid backup name.");
+export const backupRestoreSchema = z.object({ name: backupNameSchema });
+export const backupDeleteSchema = z.object({ names: z.array(backupNameSchema).min(1, "Choose at least one backup.").max(1000) });
+export const backupPolicySchema = z.object({ enabled: z.boolean(), intervalHours: z.number().int().min(1).max(168), retention: z.number().int().min(1).max(100) });
+export const loginSchema = z.object({ username: z.string().trim().min(1, "Enter your username.").max(64), password: z.string().min(1, "Enter your password.").max(256), remember: z.boolean().optional() });
+export const recoverySchema = z.object({ password: z.string().min(1, "Enter the recovery password.").max(256) });
+export const setupSchema = z.object({ setupPassword: z.string().max(256).optional(), username: z.string().trim().max(64), password: z.string().max(256) });
+export const acceptInviteSchema = z.object({ username: z.string().trim().max(64).optional(), password: z.string().max(256) });
+export const changePasswordSchema = z.object({ current: z.string().max(256), password: z.string().max(256) });
+const roleSchema = z.enum(["viewer", "operator", "admin"]);
+export const inviteSchema = z.object({ role: roleSchema });
+export const userUpdateSchema = z.object({ role: roleSchema.optional(), disabled: z.boolean().optional() });
+export const userActionSchema = z.object({ action: z.enum(["reset-link", "sign-out", "disable-two-factor"]) });
+export const loginCodeSchema = z.object({ challenge: z.string().min(1).max(128), code: z.string().trim().min(1, "Enter the code.").max(32) });
+export const twoFactorSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("start") }),
+  z.object({ action: z.literal("confirm"), code: z.string().trim().min(1, "Enter the code.").max(32) }),
+  z.object({ action: z.literal("recovery-codes"), password: z.string().min(1, "Enter your password.").max(256) }),
+]);
+export const twoFactorOffSchema = z.object({ password: z.string().min(1, "Enter your password.").max(256) });
+export const filePathSchema = z.string().max(1024);
+export const fileDirectorySchema = z.object({ path: filePathSchema.min(1) });
+export const fileRenameSchema = z.object({ from: filePathSchema.min(1), to: filePathSchema.min(1) });
+export const fileWriteSchema = z.object({ path: filePathSchema.min(1), content: z.string().max(2 * 1024 * 1024) });
+
+export { managedPropertyKeys };
+const singleLine = (value: string) => !/[\u0000\r\n]/.test(value);
+const taskScheduleSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("daily"),
+    time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 04:00."),
+    days: z.array(z.number().int().min(0).max(6)).max(7).transform((days) => [...new Set(days)].sort()).default([]),
+    timeZone: z.string().max(64).refine(isTimeZone, "Unknown time zone."),
+  }),
+  z.object({ type: z.literal("interval"), hours: z.number().int().min(1, "At least 1 hour.").max(168, "At most 168 hours (a week).") }),
+]);
+export const taskSchema = z.object({
+  kind: z.enum(["restart", "command", "broadcast"]),
+  schedule: taskScheduleSchema,
+  command: z.string().trim().max(512).refine(singleLine, "Commands must be a single line.").transform((value) => value.replace(/^\/+/, "")).optional(),
+  message: z.string().trim().max(200).refine(singleLine, "Messages must be a single line.").optional(),
+  warnMinutes: z.number().int().min(0).max(30).default(5),
+  enabled: z.boolean().default(true),
+}).superRefine((task, context) => {
+  if (task.kind === "command" && !task.command) context.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: "Enter a command." });
+  // RCON reads anything starting with "-" as an option (see assertRconCommand).
+  if (task.kind === "command" && task.command?.startsWith("-")) context.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: "Commands can't start with \"-\"." });
+  if (task.kind === "broadcast" && !task.message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["message"], message: "Enter a message." });
+});
+
+export const worldImportSchema = z.object({ archive: z.string().min(1).max(1024) });
+export const rerollSchema = z.object({ seed: z.string().trim().max(64).refine(isSafeSeed, "The seed can't contain line breaks.").default("") });
+
+// ---- Offsite backups ----
+
+const S3_PROVIDER_VALUES = S3_PROVIDERS.map((provider) => provider.value) as [S3Provider, ...S3Provider[]];
+const hostName = z.string().trim().min(1, "Enter the host.").max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/, "Use a host name or IPv4 address, like nas.local or 192.168.1.20.");
+const remotePath = z.string().trim().min(1, "Enter a folder.").max(500).regex(/^\/[^\0\r\n"'`$\\]*$/, "Use an absolute path, like /volume1/backups.");
+const secret = z.string().max(1024).optional();
+
+export const offsiteDestinationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("s3"),
+    provider: z.enum(S3_PROVIDER_VALUES),
+    endpoint: z.string().trim().max(300).regex(/^((https?:\/\/)?[a-zA-Z0-9.-]+(:\d{1,5})?\/?)?$/, "Use a host like s3.example.com or https://s3.example.com:9000.").default(""),
+    region: z.string().trim().max(64).regex(/^[a-z0-9-]*$/, "Regions look like us-east-1.").default(""),
+    bucket: z.string().trim().min(3, "Enter the bucket name.").max(63).regex(/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/, "Bucket names use lowercase letters, numbers, dots, and dashes."),
+    prefix: z.string().trim().max(200).regex(/^[a-zA-Z0-9._/-]*$/, "Use letters, numbers, dots, dashes, and slashes.").default(""),
+    accessKeyId: z.string().trim().min(1, "Enter the access key ID.").max(256),
+    secretAccessKey: secret,
+  }),
+  z.object({ kind: z.literal("folder"), path: z.string().trim().min(1, "Enter a folder.").max(500).regex(/^[^\0\r\n]*$/, "That isn't a valid folder path.") }),
+  z.object({
+    kind: z.literal("sftp"),
+    host: hostName,
+    port: z.number().int().min(1).max(65535).default(22),
+    user: z.string().trim().min(1, "Enter the user name.").max(64).regex(/^[a-zA-Z0-9_][a-zA-Z0-9._-]*$/, "User names use letters, numbers, dots, dashes, and underscores."),
+    path: remotePath,
+    auth: z.enum(["password", "key"]),
+    password: secret,
+    hostKey: z.string().max(20_000).optional(),
+  }),
+  z.object({ kind: z.literal("cloud"), panel: z.string().regex(/^[A-Za-z0-9-]{1,64}$/, "That isn't a panel folder.").optional() }),
+]);
+
+const passphrase = z.string().max(1024);
+export const offsiteSetupSchema = z.object({
+  destination: offsiteDestinationSchema,
+  passphrase,
+  schedule: z.enum(["after-backup", "daily"]).default("after-backup"),
+  keep: z.number().int().min(1).max(500).default(30),
+});
+export const offsiteUpdateSchema = z.object({ schedule: z.enum(["after-backup", "daily"]).optional(), keep: z.number().int().min(1).max(500).optional(), passphrase: passphrase.optional() });
+export const cloudServerSchema = z.object({ serverId: z.string().regex(/^[a-zA-Z0-9-]{1,64}$/, "Invalid server."), publish: z.boolean() });
+export const offsiteTestSchema = z.object({ destination: offsiteDestinationSchema });
+export const offsiteDiscoverSchema = z.object({ destination: offsiteDestinationSchema, passphrase });
+export const offsiteRestoreSchema = offsiteDiscoverSchema.extend({ servers: z.array(z.string().regex(/^[a-zA-Z0-9-]{1,64}$/)).min(1, "Choose at least one server.").max(100) });
+export const offsiteSnapshotRestoreSchema = z.object({ snapshot: z.string().regex(/^[0-9a-f]{64}$/, "Invalid snapshot.") });

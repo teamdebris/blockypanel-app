@@ -1,0 +1,5 @@
+# Build the image from this folder instead of pulling it:
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+services:
+  blocky:
+    build: .

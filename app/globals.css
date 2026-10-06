@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+/* next-themes toggles `.dark` on <html>; the system preference applies when no choice is stored. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Blocky design tokens. Light: clean, cool near-white surfaces. Green is the Blocky brand, blue is Blocky
+     Cloud and information, gold is warnings and restarts. */
+  --background: #f8fafb; --foreground: #0f172a;
+  --card: #ffffff; --card-foreground: #0f172a;
+  --popover: #ffffff; --popover-foreground: #0f172a;
+  --primary: #15803d; --primary-foreground: #ffffff;
+  --secondary: #f1f5f9; --secondary-foreground: #0f172a;
+  --muted: #f3f5f7; --muted-foreground: #5b6578;
+  --accent: #ebf8ef; --accent-foreground: #166534;
+  --destructive: #dc2626; --destructive-foreground: #ffffff;
+  --success: #15803d; --success-foreground: #ffffff; --success-soft: #dcfce7; --success-soft-foreground: #166534;
+  --warning: #b45309; --warning-foreground: #ffffff; --warning-soft: #fef3c7; --warning-soft-foreground: #92400e;
+  --danger-soft: #fee2e2; --danger-soft-foreground: #991b1b;
+  --info: #2563eb; --info-foreground: #ffffff; --info-soft: #dbeafe; --info-soft-foreground: #1e40af;
+  --border: #e5e7eb; --input: #d1d5db; --ring: #16a34a;
+  /* Cards; controls are 8px and dialogs 20px (see @theme). */
+  --radius: 0.875rem;
+  --font-sans: "Geist Sans", "Inter", "Segoe UI", Arial, sans-serif;
+  --brand-green: #54b948; --brand-green-deep: #17753a; --brand-leaf: #79d55c;
+  --cloud-blue: #2587d9; --cloud-blue-bright: #42a9ed;
+  --oak: #c79a63; --oak-light: #ead9b8; --sand: #f0dfbd; --stone: #9aa6ad; --deepslate: #263744;
+  --console-background: #101b24; --console-foreground: #dbe7df; --console-muted: #8da09b; --console-border: #293944;
+  --console-info: #66bde9; --console-success: #6fd48b; --console-warning: #f4c14f; --console-error: #ff7474;
+  --chart-1: #16a34a; --chart-2: #2563eb; --chart-3: #d97706; --chart-4: #7c3aed; --chart-5: #0891b2;
+  --sidebar: #ffffff; --sidebar-foreground: #0f172a; --sidebar-accent: #ebf8ef; --sidebar-accent-foreground: #15803d; --sidebar-border: #e5e7eb;
+  color-scheme: light;
+}
+
+.dark {
+  /* Neutral slate surfaces, as in the Overworld mockup. */
+  --background: #151b21; --foreground: #f1f5f9;
+  --card: #1b2229; --card-foreground: #f1f5f9;
+  --popover: #1f272f; --popover-foreground: #f1f5f9;
+  --primary: #22c55e; --primary-foreground: #052e14;
+  --secondary: #232b33; --secondary-foreground: #e5e7eb;
+  --muted: #20272e; --muted-foreground: #9aa4b2;
+  --accent: #163323; --accent-foreground: #86efac;
+  --destructive: #f87171; --destructive-foreground: #3f0c0c;
+  --success: #22c55e; --success-foreground: #052e14; --success-soft: #133222; --success-soft-foreground: #86efac;
+  --warning: #fbbf24; --warning-foreground: #332000; --warning-soft: #3a2f12; --warning-soft-foreground: #fde68a;
+  --danger-soft: #3d1a1a; --danger-soft-foreground: #fecaca;
+  --info: #60a5fa; --info-foreground: #08203f; --info-soft: #172b45; --info-soft-foreground: #bfdbfe;
+  --border: #2a323b; --input: #36404a; --ring: #22c55e;
+  --brand-green: #63c85f; --brand-green-deep: #3c9c52; --brand-leaf: #87dc6d;
+  --cloud-blue: #51a8ec; --cloud-blue-bright: #77c1f4;
+  --oak: #c49b70; --oak-light: #d8bd94; --sand: #dfc99f; --stone: #93a2aa; --deepslate: #1b2932;
+  --console-background: #09131a; --console-foreground: #dce7df; --console-muted: #91a39b; --console-border: #293b45;
+  --console-info: #70c7ee; --console-success: #74dc91; --console-warning: #ffd061; --console-error: #ff8080;
+  --chart-1: #22c55e; --chart-2: #60a5fa; --chart-3: #fbbf24; --chart-4: #a78bfa; --chart-5: #22d3ee;
+  --sidebar: #161d23; --sidebar-foreground: #e5e7eb; --sidebar-accent: #163323; --sidebar-accent-foreground: #4ade80; --sidebar-border: #262e36;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background); --color-foreground: var(--foreground); --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground); --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground); --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground); --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground); --color-destructive: var(--destructive);
+  --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --color-success: var(--success); --color-warning: var(--warning);
+  --color-success-soft: var(--success-soft); --color-warning-soft: var(--warning-soft); --color-danger-soft: var(--danger-soft);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success-foreground: var(--success-foreground); --color-warning-foreground: var(--warning-foreground);
+  --color-success-soft-foreground: var(--success-soft-foreground); --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-danger-soft-foreground: var(--danger-soft-foreground);
+  --color-info: var(--info); --color-info-foreground: var(--info-foreground); --color-info-soft: var(--info-soft); --color-info-soft-foreground: var(--info-soft-foreground);
+  --color-brand-green: var(--brand-green); --color-brand-leaf: var(--brand-leaf); --color-cloud-blue: var(--cloud-blue);
+  --color-oak: var(--oak); --color-sand: var(--sand); --color-stone: var(--stone); --color-deepslate: var(--deepslate);
+  --color-chart-1: var(--chart-1); --color-chart-2: var(--chart-2); --color-chart-3: var(--chart-3); --color-chart-4: var(--chart-4); --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar); --color-sidebar-foreground: var(--sidebar-foreground); --color-sidebar-accent: var(--sidebar-accent); --color-sidebar-accent-foreground: var(--sidebar-accent-foreground); --color-sidebar-border: var(--sidebar-border);
+  /* Controls 8px, cards 14px (--radius), dialogs 20px. */
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 10px; --radius-xl: var(--radius); --radius-2xl: 20px; --font-sans: var(--font-sans);
+}
+
+/* Kept in Tailwind layers so utility classes (text sizes, spacing) still override these defaults. */
+@layer base {
+* { border-color: var(--border); }
+html { background: var(--background); scroll-behavior: smooth; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+button, input { font: inherit; }
+/* Tailwind v4's preflight resets buttons to the default arrow cursor. :where() keeps this at zero
+   specificity so a component's own cursor utility still wins. */
+:where(button, [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="checkbox"], [role="switch"], a[href], summary, label[for], select, input[type="file"], input[type="checkbox"]):not(:disabled, [aria-disabled="true"], [data-disabled]) { cursor: pointer; }
+:where(button, [role="button"], [role="tab"], [role="option"], [role="checkbox"]):is(:disabled, [aria-disabled="true"], [data-disabled]) { cursor: not-allowed; }
+
+}
+
+/* Cards sit just above the page, softly. */
+@utility shadow-card {
+  box-shadow: 0 1px 2px rgb(16 32 45 / 0.05), 0 2px 6px rgb(16 32 45 / 0.04);
+  .dark & { box-shadow: 0 1px 2px rgb(0 0 0 / 0.25); }
+}
+
+@layer components {
+.font-display { font-family: var(--font-sans); }
+.eyebrow { color: var(--muted-foreground); font-size: .7rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.nav-item { display: flex; width: 100%; align-items: center; gap: .75rem; border-radius: .625rem; padding: .6rem .75rem; color: var(--sidebar-foreground); font-size: .9375rem; font-weight: 500; transition: .15s ease; }
+.nav-item svg { width: 1.125rem; height: 1.125rem; flex: none; color: var(--muted-foreground); }
+.nav-item:hover { background: color-mix(in srgb, var(--sidebar-accent) 72%, transparent); color: var(--sidebar-accent-foreground); }
+.nav-item[aria-current="page"] { background: var(--sidebar-accent); color: var(--primary); font-weight: 600; }
+.nav-item[aria-current="page"] svg { color: var(--primary); }
+
+/* Server tab bar: scrolls horizontally with edge fades so hidden tabs are discoverable. */
+.server-tabs { display: flex; gap: 1.25rem; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 24px), transparent 100%); }
+.server-tabs::-webkit-scrollbar { display: none; }
+.server-tab { position: relative; display: inline-flex; flex: none; align-items: center; gap: .45rem; height: 2.75rem; color: var(--muted-foreground); font-size: .875rem; font-weight: 500; white-space: nowrap; }
+.server-tab:hover { color: var(--foreground); }
+.server-tab[aria-current="page"] { color: var(--foreground); }
+.server-tab[aria-current="page"]::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 2px; border-radius: 2px; background: var(--primary); }
+.server-tab:focus-visible { outline: 2px solid var(--ring); outline-offset: -3px; border-radius: 4px; }
+
+.field { display: grid; gap: .5rem; }
+.field input, [data-slot="select-trigger"] { border-color: var(--input); background: color-mix(in srgb, var(--background) 75%, transparent); }
+.field-hint { color: var(--muted-foreground); font-size: .75rem; line-height: 1.1rem; }
+.field-error { color: var(--destructive); font-size: .75rem; line-height: 1.1rem; }
+
+/* The console is always dark so log colors stay readable in either theme. */
+.console { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; background: var(--console-background); color: var(--console-foreground); scrollbar-width: thin; scrollbar-color: var(--console-border) transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.console .log-warn { color: var(--console-warning); }
+.console .log-error { color: var(--console-error); }
+.console .log-command { color: var(--console-info); }
+.console .log-reply { color: #a7f3d0; }
+.console mark { background: #854d0e; color: #fff; border-radius: 2px; }
+
+.empty-grid { background-image: radial-gradient(color-mix(in srgb, var(--border) 75%, transparent) 1px, transparent 1px); background-size: 18px 18px; }
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+}
+
+/* Comfortable touch targets on phones and tablets. */
+@media (pointer: coarse) {
+  [data-slot="button"][data-size^="icon"] { min-width: 44px; min-height: 44px; }
+  [data-slot="button"][data-size="sm"] { min-height: 40px; }
+}
+@media (max-width: 640px) {
+  [data-slot="dialog-content"] { padding: 1.1rem; }
+  /* Dialogs become full-height sheets with the footer kept in view. */
+  [data-slot="dialog-content"].dialog-sheet-mobile { top: auto; bottom: 0; left: 0; right: 0; max-width: none; width: 100%; max-height: 94dvh; transform: none; translate: none; border-radius: 1rem 1rem 0 0; }
+}

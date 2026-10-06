@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Panel mark, dark">
+<title>Blocky Panel mark, dark</title>
+<defs><clipPath id="blocky-panel-dark"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath></defs>
+<g clip-path="url(#blocky-panel-dark)">
+<path fill="#4AAA63" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#31814D" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#8DDC6A" d="M32 8 56 16 32 24 8 16Z"/>
+<path fill="#ABE98B" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#76CA5A" d="m39 10 17 6-24 8-11-4Z"/>
+<g fill="#FCFDF4"><g transform="matrix(.75 .25 0 1 8 16)"><path fill-rule="evenodd" d="M6 7h20v19H6ZM9 13v3h14v-3ZM9 20v3h14v-3Z"/></g></g>
+<path fill="none" stroke="#C7F0A5" stroke-width=".8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>

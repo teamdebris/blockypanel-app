@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Obsidian block">
+<title>Blocky Obsidian block</title>
+<defs>
+<clipPath id="cube"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath>
+<clipPath id="front"><path d="M8 16 32 24v32L8 48Z"/></clipPath>
+<clipPath id="side"><path d="M32 24 56 16v32L32 56Z"/></clipPath>
+<clipPath id="top"><path d="M32 8 56 16 32 24 8 16Z"/></clipPath>
+</defs>
+<g clip-path="url(#cube)">
+<path fill="#120B1C" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#1D1229" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#2C1C40" d="M32 8 56 16 32 24 8 16Z"/>
+<g clip-path="url(#top)">
+<path fill="#3A2755" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#22152F" d="m39 10 17 6-24 8-11-4Z"/>
+<path fill="#5B3C8C" d="m24 13 6-2 4 2-5 2Z"/>
+<path fill="#7E57C2" d="m27 12.6 2-.6 1.4.8-2 .7Z"/>
+<path fill="#4A2F73" d="m41 15 5-1.5 3 1.5-5 1.6Z"/>
+</g>
+<g clip-path="url(#front)"><g transform="matrix(0.631578947 0.210526316 0 1.280000000 8 16)">
+<path fill="#2A1A3C" d="M0 0h14l-4 7H0Z"/>
+<path fill="#160D21" d="M22 12h16v13H18Z"/>
+<path fill="#3B2558" d="m5 11 8-2 5 4-6 4-7-2Z"/>
+<path fill="#6A45A8" d="m8 12 4-1 2 2-3 2-3-1Z"/>
+<path fill="#B794F6" d="m10 12.4 1.3-.3.8.8-1.2.7Z"/>
+<path fill="#3B2558" d="m26 3 6-1 3 3-4 3-5-2Z"/>
+<path fill="#5B3C8C" d="m28 3.6 3-.5 1.6 1.6-2 1.4-2.4-1Z"/>
+<path fill="#2E1D45" d="m14 19 6-1 3 3-5 3-4-2Z"/>
+</g></g>
+<g clip-path="url(#side)"><g transform="matrix(0.631578947 -0.210526316 0 1.280000000 32 24)">
+<path fill="#0B0612" d="M0 14h20l-6 11H0Z"/>
+<path fill="#24163A" d="m20 4 9-2 6 4-7 5-8-3Z"/>
+<path fill="#4A2F73" d="m23 5 5-1 3 2-4 3-4-2Z"/>
+<path fill="#9C78E0" d="m25 5.6 1.4-.3.9.9-1.2.7Z"/>
+<path fill="#1E1230" d="m6 6 6-1 3 3-5 3-4-2Z"/>
+<path fill="#2E1D45" d="m26 17 6-1 4 3-5 4-5-2Z"/>
+</g></g>
+<path fill="none" stroke="#4E3A6E" stroke-width="0.8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>

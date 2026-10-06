@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Cow">
+<title>Blocky Cow</title>
+<defs>
+<clipPath id="cube"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath>
+<clipPath id="front"><path d="M8 16 32 24v32L8 48Z"/></clipPath>
+<clipPath id="side"><path d="M32 24 56 16v32L32 56Z"/></clipPath>
+<clipPath id="top"><path d="M32 8 56 16 32 24 8 16Z"/></clipPath>
+</defs>
+<g clip-path="url(#cube)">
+<path fill="#A68E81" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#F0E9DA" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#F9F3E6" d="M32 8 56 16 32 24 8 16Z"/>
+<g clip-path="url(#top)">
+<path fill="#FFFFFF" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#DDD4C5" d="m39 10 17 6-24 8-11-4Z"/>
+</g>
+<g clip-path="url(#front)"><g transform="matrix(0.631578947 0.210526316 0 1.032258065 8 16)">
+<path fill="#55463F" d="M0 0h14l4 8-8 6-10-2ZM31 2h7v13l-7-3-4-6Z"/>
+<path fill="#3B4143" d="M11 13h4v4h-4ZM28 13h4v4h-4Z"/>
+<path fill="#D4B6A5" d="m13 19 15-2 3 11-19 1Z"/>
+<path fill="#8B716D" d="M17 23h3v3h-3ZM25 23h3v3h-3Z"/></g></g>
+<g clip-path="url(#side)"><g transform="matrix(0.631578947 -0.210526316 0 1.032258065 32 24)"></g></g>
+<path fill="none" stroke="#FFFFFF" stroke-width="0.8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>
