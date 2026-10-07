@@ -35,29 +35,38 @@ export function ServerIconButton({ server, className }: { server: MinecraftServe
   </>;
 }
 
-function ServerIconPicker({ server, open, onOpenChange }: { server: MinecraftServer; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { track, isPending } = usePanel();
+/**
+ * Every icon to pick from, saved the moment one is clicked (it never restarts anything). The dialog
+ * shows labels under each; the settings page shows a compact grid of 8 across.
+ */
+export function ServerIconGrid({ server, compact, onPicked }: { server: MinecraftServer; compact?: boolean; onPicked?: () => void }) {
+  const { track, isPending, can } = usePanel();
   const current = serverIcon(server);
-  const pick = (icon: ServerIcon) => void track(`${server.id}:icon`, async () => {
+  const pick = (icon: ServerIcon) => icon !== current && void track(`${server.id}:icon`, async () => {
     try {
       await api(`/api/servers/${server.id}/icon`, { method: "PUT", body: JSON.stringify({ icon }) });
-      onOpenChange(false);
+      if (compact) toast.success(`Icon changed to ${SERVER_ICON_LABELS[icon].toLowerCase()}.`);
+      onPicked?.();
     } catch (error) { toast.error(errorMessage(error, "Couldn't change the icon.")); }
   });
   const group = (title: string, icons: readonly ServerIcon[]) => <div>
     <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
-    <div role="radiogroup" aria-label={title} className="grid grid-cols-4 gap-2">
-      {icons.map((icon) => <button key={icon} type="button" role="radio" aria-checked={icon === current} disabled={isPending(`${server.id}:icon`)} onClick={() => pick(icon)}
+    <div role="radiogroup" aria-label={title} className={cn("grid gap-2", compact ? "grid-cols-4 sm:grid-cols-8" : "grid-cols-4")}>
+      {icons.map((icon) => <button key={icon} type="button" role="radio" aria-checked={icon === current} aria-label={SERVER_ICON_LABELS[icon]} title={SERVER_ICON_LABELS[icon]} disabled={!can.manage || isPending(`${server.id}:icon`)} onClick={() => pick(icon)}
         className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
           icon === current ? "border-primary bg-primary/10 font-medium" : "border-border")}>
-        <BlockArt name={icon} className="size-12" />{SERVER_ICON_LABELS[icon]}
+        <BlockArt name={icon} className={compact ? "size-10" : "size-12"} />{!compact && SERVER_ICON_LABELS[icon]}
       </button>)}
     </div>
   </div>;
+  return <div className="space-y-4">{group("Blocks", SERVER_ICONS.slice(0, 8))}{group("Mobs", SERVER_ICONS.slice(8))}</div>;
+}
+
+function ServerIconPicker({ server, open, onOpenChange }: { server: MinecraftServer; open: boolean; onOpenChange: (open: boolean) => void }) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="sm:max-w-md">
       <DialogHeader><DialogTitle>Icon for {server.name}</DialogTitle><DialogDescription>Shown wherever the server is listed. Changing it doesn&apos;t restart anything.</DialogDescription></DialogHeader>
-      <div className="space-y-4">{group("Blocks", SERVER_ICONS.slice(0, 8))}{group("Mobs", SERVER_ICONS.slice(8))}</div>
+      <ServerIconGrid server={server} onPicked={() => onOpenChange(false)} />
     </DialogContent>
   </Dialog>;
 }
