@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmDialog, Section } from "../common";
 import { ApiError, api, errorMessage, formatRelative, formChanges, fromServer, lastBackupAt, toPayload } from "../lib";
 import { useNow, usePanel } from "../panel-context";
+import { ServerIconGrid } from "../server-icon";
 import { AdvancedFields, BasicFields, type FieldErrors, GameplayFields, NetworkFields, PerformanceFields, validateForm } from "../server-form";
 import type { MinecraftServer, ServerForm } from "../types";
 
@@ -193,6 +194,7 @@ export function SettingsTab({ server }: { server: MinecraftServer }) {
       <div className="min-w-0">
         <fieldset disabled={!can.manage} className="min-w-0">
           {section === "general" && <Section title="General"><div className="grid gap-5 sm:grid-cols-2"><BasicFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>}
+          {section === "general" && <Section className="mt-6" title="Icon" description="Shown wherever the server is listed. Saved as soon as you pick one, and it doesn't restart anything."><ServerIconGrid server={server} compact /></Section>}
           {section === "gameplay" && <Section title="Gameplay" description="Applied each time the server starts."><div className="grid gap-5 sm:grid-cols-2"><GameplayFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>}
           {section === "network" && <Section title="Network" description="Ports for plugins like web maps and voice chat. Applied when the server is recreated."><NetworkFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} serverId={server.id} /></Section>}
           {section === "performance" && <Section title="Performance" description="Applied each time the server is recreated."><div className="grid gap-5 sm:grid-cols-2"><PerformanceFields form={form} setForm={update} errors={errors} idPrefix="edit" servers={servers} /></div></Section>}
