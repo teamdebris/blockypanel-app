@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { beginLoginAttempt, clientKey, loginRetryAfter, resetLoginLimits, serialized } from "../lib/rate-limit.ts";
 import { safeReturnPath } from "../lib/return-path.ts";
-import { recoveryConfigured, recoveryPasswordMatches, recoveryPasswordProblem } from "../lib/session.ts";
+import { recoveryConfigured, recoveryKey, recoveryPasswordMatches, recoveryPasswordProblem } from "../lib/session.ts";
 
 afterEach(() => {
   resetLoginLimits();
@@ -82,4 +82,20 @@ test("recovery password comparison", () => {
   delete process.env.BLOCKY_ADMIN_PASSWORD;
   // No recovery password configured means recovery never matches, not even an empty guess.
   assert.equal(recoveryPasswordMatches(""), false);
+});
+
+test("the recovery key is a slow hash that changes with BLOCKY_ADMIN_PASSWORD", () => {
+  const saved = process.env.BLOCKY_ADMIN_PASSWORD;
+  try {
+    delete process.env.BLOCKY_ADMIN_PASSWORD;
+    assert.equal(recoveryKey(), undefined);
+    process.env.BLOCKY_ADMIN_PASSWORD = "a-long-recovery-password-1";
+    const first = recoveryKey();
+    assert.match(first ?? "", /^s1\.[A-Za-z0-9_-]{43}$/);
+    assert.equal(recoveryKey(), first);
+    process.env.BLOCKY_ADMIN_PASSWORD = "a-long-recovery-password-2";
+    assert.notEqual(recoveryKey(), first);
+  } finally {
+    if (saved === undefined) delete process.env.BLOCKY_ADMIN_PASSWORD; else process.env.BLOCKY_ADMIN_PASSWORD = saved;
+  }
 });
