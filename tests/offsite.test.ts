@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNoRepository, isWrongPassword, ResticError } from "../lib/offsite-restic.ts";
+import { isNoRepository, isStaleCloudKey, isWrongPassword, ResticError } from "../lib/offsite-restic.ts";
 import { folderPathProblem, friendlyDestinationError, parseIndex, passphraseProblem, repositoryFor, s3Endpoint, scrubSecrets, secretsOf, serializeIndex, type OffsiteDestination } from "../lib/offsite-core.ts";
 
 const s3: OffsiteDestination = { kind: "s3", provider: "b2", endpoint: "", region: "us-west-004", bucket: "my-worlds", prefix: "blocky/", accessKeyId: "004abc", secretAccessKey: "K004secret" };
@@ -83,4 +83,13 @@ test("destination failures are explained by what actually went wrong", () => {
   assert.equal(kind("The specified bucket does not exist. NoSuchBucket"), "That bucket doesn't exist");
   assert.equal(kind("ssh: connect to host nas.local port 22: Connection refused"), "Couldn't reach the destination");
   assert.equal(friendlyDestinationError("something else entirely"), undefined);
+});
+
+test("a Blocky Cloud key is dropped when refused or unreachable, not on restic's normal answers", () => {
+  assert.equal(isStaleCloudKey(new ResticError("Fatal: unable to open config file: Stat: Access Denied.", 1)), true);
+  assert.equal(isStaleCloudKey(new ResticError("Fatal: unable to open repository: dial tcp: lookup s3.us-east-000.backblazeb2.com: no such host", 1)), true);
+  assert.equal(isStaleCloudKey(new Error("The destination didn't answer in time.")), true);
+  assert.equal(isStaleCloudKey(new ResticError("Fatal: repository does not exist", 10)), false);
+  assert.equal(isStaleCloudKey(new ResticError("Fatal: wrong password or no key found", 12)), false);
+  assert.equal(isStaleCloudKey("not an error"), false);
 });

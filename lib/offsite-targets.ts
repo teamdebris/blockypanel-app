@@ -9,7 +9,7 @@ import { PassThrough } from "node:stream";
 import Docker from "dockerode";
 import { BadRequestError } from "@/lib/errors";
 import { repositoryFor, scrubSecrets, secretsOf, type OffsiteDestination } from "@/lib/offsite-core";
-import { directRunner, isAccessProblem, ResticError, type RunOptions, type Runner } from "@/lib/offsite-restic";
+import { directRunner, isStaleCloudKey, ResticError, type RunOptions, type Runner } from "@/lib/offsite-restic";
 import { MAX_STDOUT_BYTES, OutputTooLargeError, outputCollector } from "@/lib/output-limit";
 import { DOCKER_STORAGE_ROOT, PANEL_ROOT, resticCachePath, serverBackupPath, serverDataPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 
@@ -209,11 +209,11 @@ export async function targetFor(destination: OffsiteDestination): Promise<Target
   if (destination.kind === "cloud") {
     const { cloudBackupDestination, forgetCloudCredentials } = await import("@/lib/cloud");
     const target = await targetFor(await cloudBackupDestination(destination.panel));
-    // A refused key (deleted at Backblaze, or revoked) is dropped, so the next attempt gets a new one.
+    // A refused key (deleted at Backblaze, or revoked), or one whose endpoint can't be reached, is dropped, so the next attempt gets a new one.
     return {
       ...target,
       runner: { ...target.runner, run: (args, options) => target.runner.run(args, options).catch(async (error: unknown) => {
-        if (isAccessProblem(error)) await forgetCloudCredentials();
+        if (isStaleCloudKey(error)) await forgetCloudCredentials();
         throw error;
       }) },
     };
