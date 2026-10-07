@@ -15,7 +15,7 @@ sudo curl -fsSL -o .env https://raw.githubusercontent.com/teamdebris/blockypanel
 sudo docker compose up -d
 ```
 
-The image is `ghcr.io/teamdebris/blockypanel-app`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. The `latest` tag follows the main branch; to stay on a release, set `BLOCKY_VERSION` in `.env` (for example `0.1.0`). `BLOCKY_VERSION=dev` runs the `dev` branch, where changes land before a release: newer, and less tested. To roll back, set `BLOCKY_VERSION` to the previous release and run the same two commands.
+The image is `ghcr.io/teamdebris/blockypanel-app`, built for amd64 and arm64. To update: `sudo docker compose pull && sudo docker compose up -d`. The `latest` tag is the newest release; to stay on a specific release, set `BLOCKY_VERSION` in `.env` (for example `0.2.0`). `BLOCKY_VERSION=dev` runs the `dev` branch, where changes land before a release: newer, and less tested. To roll back, set `BLOCKY_VERSION` to the previous release and run the same two commands.
 
 To keep it somewhere else, use that folder instead and set `BLOCKY_HOST_STORAGE` in `.env` to its absolute path (for example `/srv/minecraft`). The data can also live apart from the Compose files: point `BLOCKY_HOST_STORAGE` at any absolute path.
 
