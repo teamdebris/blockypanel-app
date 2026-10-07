@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { scryptSync } from "node:crypto";
 import { secretsEqual } from "./passwords.ts";
 
 export const COOKIE_NAME = "blocky_session";
@@ -38,10 +38,20 @@ export function recoveryPasswordMatches(provided: string) {
   return recoveryConfigured() && secretsEqual(provided, process.env.BLOCKY_ADMIN_PASSWORD || "");
 }
 
+let cachedRecoveryKey: { password: string; key: string } | undefined;
+
 /**
  * Identifies the current recovery password without storing it: recovery sessions carry this and
- * end when BLOCKY_ADMIN_PASSWORD changes or is removed.
+ * end when BLOCKY_ADMIN_PASSWORD changes or is removed. It's kept in the database, so it's a slow
+ * scrypt hash (like account passwords) rather than a fast one that a copied database could be
+ * guessed against. Worked out once per password, since every request checks it.
  */
 export function recoveryKey() {
-  return recoveryConfigured() ? createHash("sha256").update(`blocky-recovery\u0000${process.env.BLOCKY_ADMIN_PASSWORD}`).digest("base64url") : undefined;
+  if (!recoveryConfigured()) return undefined;
+  const password = process.env.BLOCKY_ADMIN_PASSWORD || "";
+  if (cachedRecoveryKey?.password !== password) {
+    const key = scryptSync(password.normalize("NFKC"), "blocky-recovery", 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+    cachedRecoveryKey = { password, key: `s1.${key.toString("base64url")}` };
+  }
+  return cachedRecoveryKey.key;
 }
