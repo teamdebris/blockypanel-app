@@ -29,6 +29,12 @@ A self-hosted web panel for running Minecraft servers with Docker.
 - Works on a phone, in light and dark
 - Optional [Blocky Cloud](https://cloud.blockypanel.com): free `blockylink.net` addresses and Obsidian backups
 
+## Built with
+
+- [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server): the container every Minecraft server runs in
+- [restic](https://restic.net): incremental, encrypted backups and off-site copies
+- [Caddy](https://caddyserver.com): automatic HTTPS for the optional domain setup
+
 ## AI assistance
 
 Blocky Panel was built with AI assistance for code formatting, documentation writing, security audits, and UX/UI development. The models used were ChatGPT Sol 6, ChatGPT Astra 6, Claude Opus 4.8 and 5.5, and Claude Fable 5.1. Continuous testing during development was done by a meat-bag.
