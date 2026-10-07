@@ -1,6 +1,6 @@
 services:
   blocky:
-    # Pin a release with BLOCKY_VERSION in .env (e.g. 0.1.0); compose.build.yaml builds from source instead.
+    # Pin a release with BLOCKY_VERSION in .env (e.g. 0.2.0); compose.build.yaml builds from source instead.
     image: ghcr.io/teamdebris/blockypanel-app:${BLOCKY_VERSION:-latest}
     container_name: blocky-panel
     # Everything you might change lives in .env (see .env.example). Nothing here needs editing.
