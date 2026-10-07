@@ -88,6 +88,19 @@ export function isAccessProblem(error: unknown) {
   return error instanceof Error && ACCESS_PROBLEM.test(error.message);
 }
 
+const UNREACHABLE = /no such host|dial tcp|connection refused|i\/o timeout|network is unreachable|tls handshake/i;
+
+/**
+ * Whether a Blocky Cloud key should be dropped after this failure: refused, or its endpoint couldn't
+ * be reached (timed out, or a wrong region Blocky Cloud sent with the key). Not for restic's normal
+ * answers, like no repository yet or a wrong password.
+ */
+export function isStaleCloudKey(error: unknown) {
+  if (isAccessProblem(error)) return true;
+  if (!(error instanceof Error)) return false;
+  return !(error instanceof ResticError) || UNREACHABLE.test(error.message);
+}
+
 export function isNoRepository(error: unknown) {
   if (!(error instanceof ResticError)) return false;
   if (ACCESS_PROBLEM.test(error.message)) return false;
