@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (2026-10-07)
+
+- Obsidian backups: a backup key whose address can't be reached is now replaced on the next try, instead
+  of every connection test and copy timing out until the key expired.
+
 ## 0.2.0 (2026-10-07)
 
 - Pick a server's icon in Settings > General. It saves as soon as you click and doesn't restart anything.
