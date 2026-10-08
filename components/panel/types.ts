@@ -15,6 +15,8 @@ export type ServerConfig = {
   useMeowiceFlags: boolean; pauseWhenEmptySeconds: number;
   /** Modrinth project IDs the image installs into plugins/ or mods/ on start. */
   modrinthProjects: string[];
+  /** Also download projects' optional dependencies, not just required ones. */
+  modrinthOptionalDependencies: boolean;
   gameMode: GameMode; pvp: boolean; hardcore: boolean; allowFlight: boolean; commandBlocks: boolean; onlineMode: boolean; spawnProtection: number;
   /** UDP on the game port too (Plasmo Voice, server-list query). */
   gamePortUdp: boolean;
@@ -28,7 +30,9 @@ export type FinishedOperation = ActiveOperation & { ok: boolean; message: string
 export type MinecraftServer = ServerConfig & {
   id: string; status: ServerStatus; health: string; statusMessage: string; createdAt: string;
   cpuPercent: number; memoryUsageMb: number; memoryLimitMb: number; diskUsageBytes: number;
-  playersOnline: number; players: string[]; backupCount: number; lastBackupAt?: string; icon?: string; restartCount: number;
+  playersOnline: number; players: string[]; backupCount: number;
+  /** The Minecraft version the server last reported running; differs from `version` for LATEST and SNAPSHOT. */
+  runningVersion?: string; lastBackupAt?: string; icon?: string; restartCount: number;
   operation?: ActiveOperation; lastOperation?: FinishedOperation;
   backup?: { enabled: boolean; intervalHours: number; lastRunAt?: string; consecutiveFailures: number };
   /** Present when offsite backups are set up. `included` is false when this server's copies are switched off. */
