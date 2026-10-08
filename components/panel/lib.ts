@@ -59,7 +59,7 @@ export const initialForm: ServerForm = {
   name: "", type: "PAPER", version: "LATEST", javaVersion: "auto", memory: "4G", cpuLimit: "0", port: "25565", difficulty: "normal",
   maxPlayers: "20", whitelist: "", seed: "", motd: "A Minecraft Server powered by Blocky", customProperties: "",
   initialMemoryPercent: "25", maxMemoryPercent: "75", rollingLogMaxFiles: "30", viewDistance: "8", simulationDistance: "6",
-  stopAnnounceDelaySeconds: "10", useMeowiceFlags: true, pauseWhenEmptySeconds: "300", modrinthProjects: [], eula: false,
+  stopAnnounceDelaySeconds: "10", useMeowiceFlags: true, pauseWhenEmptySeconds: "300", modrinthProjects: [], modrinthOptionalDependencies: false, eula: false,
   gameMode: "survival", pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: "16", gamePortUdp: false, extraPorts: [],
 };
 
@@ -83,7 +83,7 @@ export function fromServer(server: MinecraftServer): ServerForm {
     initialMemoryPercent: String(server.initialMemoryPercent), maxMemoryPercent: String(server.maxMemoryPercent),
     rollingLogMaxFiles: String(server.rollingLogMaxFiles), viewDistance: String(server.viewDistance), simulationDistance: String(server.simulationDistance),
     stopAnnounceDelaySeconds: String(server.stopAnnounceDelaySeconds), useMeowiceFlags: server.useMeowiceFlags, pauseWhenEmptySeconds: String(server.pauseWhenEmptySeconds),
-    modrinthProjects: server.modrinthProjects || [],
+    modrinthProjects: server.modrinthProjects || [], modrinthOptionalDependencies: server.modrinthOptionalDependencies ?? false,
     gameMode: server.gameMode || "survival", pvp: server.pvp ?? true, hardcore: server.hardcore ?? false, allowFlight: server.allowFlight ?? false,
     commandBlocks: server.commandBlocks ?? false, onlineMode: server.onlineMode ?? true, spawnProtection: String(server.spawnProtection ?? 16),
     gamePortUdp: server.gamePortUdp ?? false, extraPorts: server.extraPorts ?? [],
@@ -95,7 +95,7 @@ const fieldLabels: Partial<Record<keyof ServerForm, string>> = {
   difficulty: "Difficulty", maxPlayers: "Max players", whitelist: "Whitelist", seed: "World seed", motd: "Message of the day",
   customProperties: "Custom properties", initialMemoryPercent: "Initial heap", maxMemoryPercent: "Maximum heap", rollingLogMaxFiles: "Log files kept",
   viewDistance: "View distance", simulationDistance: "Simulation distance", stopAnnounceDelaySeconds: "Shutdown warning",
-  useMeowiceFlags: "Optimized JVM flags", pauseWhenEmptySeconds: "Pause when empty", modrinthProjects: "Plugins and mods",
+  useMeowiceFlags: "Optimized JVM flags", pauseWhenEmptySeconds: "Pause when empty", modrinthProjects: "Plugins and mods", modrinthOptionalDependencies: "Optional dependencies",
   gameMode: "Game mode", pvp: "PvP", hardcore: "Hardcore", allowFlight: "Allow flight", commandBlocks: "Command blocks", onlineMode: "Online mode", spawnProtection: "Spawn protection",
   gamePortUdp: "Game port over UDP", extraPorts: "Extra ports",
 };
@@ -197,9 +197,11 @@ export function serverAddress(port: number, publicHost?: string, omitDefault = t
   return omitDefault && port === 25565 ? host : `${host}:${port}`;
 }
 
-/** "Paper 1.21.8". */
+/** "Paper 1.21.8", or "Paper 1.21.8 (latest)" for a server set to LATEST once it has run. */
 export function serverKind(server: MinecraftServer) {
-  return `${serverTypes.find((item) => item.value === server.type)?.label || server.type} ${server.version}`;
+  const label = serverTypes.find((item) => item.value === server.type)?.label || server.type;
+  const follows = !/^\d/.test(server.version);
+  return follows && server.runningVersion ? `${label} ${server.runningVersion} (${server.version.toLowerCase()})` : `${label} ${server.version}`;
 }
 
 export function nextFreePort(servers: MinecraftServer[]) {

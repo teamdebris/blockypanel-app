@@ -45,6 +45,8 @@ type ServerControl = {
   panelStoppedAt?: string;
   /** Why the panel stopped a server stuck restarting on a setup error, shown until it starts again. */
   startupFailure?: { message: string; at: string };
+  /** The Minecraft version the server last reported running, for servers set to LATEST or SNAPSHOT. */
+  runningVersion?: string;
   tasks?: ScheduledTask[];
   /**
    * A rename after the container was made. Docker labels can't change on a running container, so
@@ -224,6 +226,10 @@ export async function markStoppedByPanel(id: string, at = new Date().toISOString
 
 export async function markStartupFailure(id: string, message: string, at = new Date().toISOString()) {
   return mutate((state) => { ensureServer(state, id).startupFailure = { message, at }; });
+}
+
+export async function recordRunningVersion(id: string, version: string) {
+  return mutate((state) => { ensureServer(state, id).runningVersion = version; });
 }
 
 export async function setServerName(id: string, name: string, container: string) {

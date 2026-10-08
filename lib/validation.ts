@@ -67,6 +67,7 @@ const serverSchema = z.object({
   spawnProtection: z.number().int().min(0).max(1000).default(16),
   modrinthProjects: z.array(z.string().regex(/^[a-zA-Z0-9]{8}$/, "Invalid Modrinth project.")).max(100, "At most 100 plugins or mods.")
     .transform((ids) => [...new Set(ids)]).default([]),
+  modrinthOptionalDependencies: z.boolean().default(false),
   /** UDP on the game port too: Plasmo Voice and the server-list query protocol use it. */
   gamePortUdp: z.boolean().default(false),
   extraPorts: z.array(extraPortSchema).max(MAX_EXTRA_PORTS, `At most ${MAX_EXTRA_PORTS} extra ports.`).default([]),

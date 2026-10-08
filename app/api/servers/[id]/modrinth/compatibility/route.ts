@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { modrinthServerConfig } from "@/lib/docker";
 import { incompatibleProjects } from "@/lib/modrinth";
+import { effectiveVersion } from "@/lib/modrinth-core";
 import { assertServerId } from "@/lib/paths";
 import { apiError } from "@/lib/responses";
 import { serverFields } from "@/lib/validation";
@@ -15,6 +16,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const server = await modrinthServerConfig(assertServerId((await context.params).id));
     const type = serverFields.type.parse(request.nextUrl.searchParams.get("type") || server.type);
     const version = serverFields.version.parse(request.nextUrl.searchParams.get("version") || server.version);
-    return NextResponse.json({ incompatible: await incompatibleProjects(server.modrinthProjects, type, version) });
+    // Staying on LATEST is checked against the version the server runs now.
+    const checked = version === server.version ? effectiveVersion(version, server.runningVersion) ?? version : version;
+    return NextResponse.json({ incompatible: await incompatibleProjects(server.modrinthProjects, type, checked) });
   } catch (error) { return apiError(error); }
 }
