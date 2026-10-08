@@ -6,7 +6,7 @@ import { lstat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { anchorDirectory, openRegularFile } from "@/lib/anchored-paths";
 import { HttpError } from "@/lib/errors";
-import { concreteVersion, modrinthTarget, safeIconUrl, searchFacets } from "@/lib/modrinth-core";
+import { concreteVersion, loaderSteps, modrinthTarget, pickRelease, safeIconUrl, searchFacets, sortDependencies, type VersionPick } from "@/lib/modrinth-core";
 import { serverDataPath } from "@/lib/paths";
 import packageJson from "@/package.json";
 
@@ -21,6 +21,8 @@ const PROJECT_TTL = 10 * 60_000;
 type ApiProject = { id: string; slug: string; title: string; description: string; icon_url: string | null; downloads: number; loaders: string[]; game_versions: string[]; server_side: string; project_type: string };
 type ApiHit = { project_id: string; slug: string; title: string; description: string; icon_url: string | null; downloads: number; author: string; categories: string[] };
 type ApiVersion = { id: string; project_id: string; version_number: string; version_type: string; date_published: string };
+
+type ApiFullVersion = ApiVersion & { dependencies: { project_id?: string | null; version_id?: string | null; dependency_type: string }[] };
 
 type ModrinthProject = { id: string; slug: string; title: string; description: string; iconUrl: string | null; downloads: number; author?: string; projectUrl: string };
 
@@ -212,4 +214,128 @@ export async function installedProjects(serverId: string, server: { type: Server
     return { file: jar.name, size: jar.size, project: project ? { title: project.title, projectUrl: projectUrl(target.kind, project.slug) } : undefined };
   });
   return { projects, other };
+}
+
+// Version lists change when a project publishes; ten minutes keeps a busy tab well under the rate limit.
+const projectVersionsCache = new Map<string, { at: number; value: ApiFullVersion[] }>();
+const versionByIdCache = new Map<string, { at: number; value: ApiFullVersion }>();
+
+async function projectVersions(id: string, loaders: string[], gameVersion: string | undefined) {
+  const key = JSON.stringify([id, loaders, gameVersion ?? null]);
+  const cached = projectVersionsCache.get(key);
+  if (cached && Date.now() - cached.at < PROJECT_TTL) return cached.value;
+  const params = new URLSearchParams({ loaders: JSON.stringify(loaders), ...(gameVersion ? { game_versions: JSON.stringify([gameVersion]) } : {}) });
+  const value = await modrinth<ApiFullVersion[]>(`/project/${encodeURIComponent(id)}/version?${params}`);
+  remember(projectVersionsCache, key, value);
+  return value;
+}
+
+async function versionById(id: string) {
+  const cached = versionByIdCache.get(id);
+  if (cached && Date.now() - cached.at < PROJECT_TTL) return cached.value;
+  const value = await modrinth<ApiFullVersion>(`/version/${encodeURIComponent(id)}`);
+  remember(versionByIdCache, id, value);
+  return value;
+}
+
+/** The version the image would download for a project, trying each loader step in turn as it does. */
+async function imagePick(id: string, type: ServerType, gameVersion: string | undefined): Promise<VersionPick<ApiFullVersion>> {
+  for (const loaders of loaderSteps(type)) {
+    const pick = pickRelease(await projectVersions(id, loaders, gameVersion));
+    if (pick.status !== "no-files") return pick;
+  }
+  return { status: "no-files" };
+}
+
+type PickStatus = "ok" | "no-files" | "no-release" | "unavailable";
+type Pick = { status: PickStatus; version?: ApiFullVersion };
+export type DependencyInfo = { id: string; title: string; projectUrl: string; status: PickStatus; version?: string };
+export type ProjectPlan = {
+  status: PickStatus;
+  /** The version the server will download. */
+  version?: string;
+  /** Downloaded with it, including dependencies of dependencies. */
+  installs: DependencyInfo[];
+  /** Its optional dependencies, listed while optional dependencies are off (when on, they're in `installs`). */
+  optional: DependencyInfo[];
+  /** Projects on the list, or downloaded with it, that this one says it doesn't work with. */
+  conflicts: DependencyInfo[];
+};
+
+// A plugin with a runaway dependency tree shouldn't turn one page load into hundreds of requests.
+const MAX_DEPENDENCY_LOOKUPS = 60;
+
+/**
+ * What the image will download for each project on the list: the version it picks, the dependencies
+ * that come with it, and anything that will stop the server starting. Follows the image's rules: the
+ * newest release for the loader steps and Minecraft version, required dependencies (and optional ones
+ * when they're switched on) followed all the way down, and projects on the list never pulled in again
+ * as someone's dependency. Without a known Minecraft version (LATEST before the server has run), the
+ * picks are the newest release for any version, so `exact` is false.
+ */
+export async function dependencyPlan(ids: string[], type: ServerType, gameVersion: string | undefined, includeOptional: boolean) {
+  const target = modrinthTarget(type);
+  if (!target || !ids.length) return { exact: Boolean(gameVersion), projects: {} as Record<string, ProjectPlan> };
+  const explicit = new Set(ids);
+  const details = await projectsById(ids);
+  // Each project's pick, shared between everything that depends on it.
+  const picks = new Map<string, Promise<Pick>>();
+  const pickProject = (id: string) => {
+    let pending = picks.get(id);
+    if (!pending) {
+      pending = picks.size >= MAX_DEPENDENCY_LOOKUPS ? Promise.resolve<Pick>({ status: "ok" })
+        : imagePick(id, type, gameVersion).then((pick): Pick => pick.status === "ok" ? { status: "ok", version: pick.version } : { status: pick.status }, (): Pick => ({ status: "unavailable" }));
+      picks.set(id, pending);
+    }
+    return pending;
+  };
+  // A dependency pinned to a version is downloaded as that version, whatever the Minecraft version.
+  const pickDependency = async (dependency: { projectId?: string; versionId?: string }): Promise<Pick & { projectId?: string }> => {
+    if (dependency.versionId) {
+      const version = await versionById(dependency.versionId).catch(() => undefined);
+      return { projectId: version?.project_id || dependency.projectId, status: version ? "ok" : "unavailable", version };
+    }
+    return { projectId: dependency.projectId, ...(await pickProject(dependency.projectId!)) };
+  };
+
+  type Working = Pick & { installs: Map<string, Pick>; optional: Set<string>; incompatible: Set<string> };
+  const plans: Record<string, Working> = {};
+  await Promise.all(ids.map(async (id) => {
+    const own: Pick = details.has(id) ? await pickProject(id) : { status: "unavailable" };
+    const plan: Working = { ...own, installs: new Map(), optional: new Set(), incompatible: new Set() };
+    plans[id] = plan;
+    const queue = own.version ? [own.version] : [];
+    for (let version = queue.shift(); version; version = queue.shift()) {
+      const sorted = sortDependencies(version.dependencies || []);
+      for (const dependency of sorted.incompatible) if (dependency.projectId) plan.incompatible.add(dependency.projectId);
+      if (!includeOptional && version === own.version) {
+        for (const dependency of sorted.optional) if (dependency.projectId && !explicit.has(dependency.projectId)) plan.optional.add(dependency.projectId);
+      }
+      for (const dependency of includeOptional ? [...sorted.required, ...sorted.optional] : sorted.required) {
+        if (dependency.projectId && (explicit.has(dependency.projectId) || plan.installs.has(dependency.projectId))) continue;
+        const picked = await pickDependency(dependency);
+        if (!picked.projectId || explicit.has(picked.projectId) || plan.installs.has(picked.projectId)) continue;
+        plan.installs.set(picked.projectId, { status: picked.status, version: picked.version });
+        if (picked.version) queue.push(picked.version);
+      }
+    }
+  }));
+
+  const mentioned = [...new Set(Object.values(plans).flatMap((plan) => [...plan.installs.keys(), ...plan.optional, ...plan.incompatible]))];
+  const names = mentioned.length ? await projectsById(mentioned).catch(() => new Map<string, ApiProject>()) : new Map<string, ApiProject>();
+  const everything = new Set([...explicit, ...Object.values(plans).flatMap((plan) => [...plan.installs.keys()])]);
+  const describe = (id: string, pick: Pick): DependencyInfo => {
+    const project = names.get(id) || details.get(id);
+    return { id, title: project?.title || id, projectUrl: projectUrl(target.kind, project?.slug || id), status: pick.status, version: pick.version?.version_number };
+  };
+  const projects: Record<string, ProjectPlan> = {};
+  for (const [id, plan] of Object.entries(plans)) {
+    projects[id] = {
+      status: plan.status, version: plan.version?.version_number,
+      installs: [...plan.installs].map(([dependency, pick]) => describe(dependency, pick)),
+      optional: [...plan.optional].map((dependency) => describe(dependency, { status: "ok" })),
+      conflicts: [...plan.incompatible].filter((other) => everything.has(other)).map((other) => describe(other, { status: "ok" })),
+    };
+  }
+  return { exact: Boolean(gameVersion), projects };
 }

@@ -6,12 +6,14 @@ import { ArrowUpCircle, Check, ExternalLink, LoaderCircle, Plus, Puzzle, RotateC
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MAX_MODRINTH_PROJECTS, type ModrinthTarget, projectListChanges } from "@/lib/modrinth-core";
 import { cn } from "@/lib/utils";
 import { PORT_PRESETS } from "@/lib/ports";
 import { ConfirmDialog, Section } from "../common";
-import { api, errorMessage, formatBytes, fromServer, serverHref, toPayload } from "../lib";
+import { api, errorMessage, formatBytes, fromServer, serverHref, serverTypes, toPayload } from "../lib";
 import { usePanel } from "../panel-context";
 import type { MinecraftServer } from "../types";
 
@@ -19,6 +21,26 @@ type Project = { id: string; slug: string; title: string; description: string; i
 type Installed = Project & { installed?: { version: string; file: string }; update?: string; compatible: boolean; available: boolean };
 type OtherJar = { file: string; size: number; project?: { title: string; projectUrl: string } };
 type TabData = { target: ModrinthTarget | null; projects: Installed[]; other: OtherJar[] };
+type PickStatus = "ok" | "no-files" | "no-release" | "unavailable";
+type Dependency = { id: string; title: string; projectUrl: string; status: PickStatus; version?: string };
+type ProjectPlan = { status: PickStatus; version?: string; installs: Dependency[]; optional: Dependency[]; conflicts: Dependency[] };
+type Plan = { exact: boolean; gameVersion?: string; projects: Record<string, ProjectPlan> };
+
+/** Why a project on the list will stop the server starting, or undefined when it won't. */
+function blocker(plan: ProjectPlan | undefined, where: string) {
+  if (!plan) return undefined;
+  if (plan.status === "unavailable") return "No longer available on Modrinth. Remove it, or the server won't start.";
+  if (plan.status === "no-files") return `No file for ${where}. Remove it, or the server won't start.`;
+  if (plan.status === "no-release") return `Only beta or alpha files for ${where}, and the server installs releases only. Remove it, or the server won't start.`;
+  const missing = plan.installs.filter((dependency) => dependency.status !== "ok");
+  if (missing.length) return `Needs ${listNames(missing)}, which ${missing.length === 1 ? "has" : "have"} no release for ${where}. The server won't start.`;
+  return undefined;
+}
+
+function listNames(items: { title: string }[]) {
+  const titles = items.map((item) => item.title);
+  return titles.length <= 1 ? titles.join("") : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)}`;
+}
 
 function compact(value: number) {
   return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -49,7 +71,7 @@ function SearchResults({ server, target, selected, onAdd }: { server: MinecraftS
     return () => window.clearTimeout(timer);
   }, [query, server.id]);
   const noun = target.kind === "plugin" ? "plugins" : "mods";
-  return <Section title={`Find ${noun}`} description={`From Modrinth, filtered to ${noun} that run on ${server.type === "PURPUR" ? "Purpur" : server.type.charAt(0) + server.type.slice(1).toLowerCase()} ${server.version}.`}>
+  return <Section title={`Find ${noun}`} description={`From Modrinth, filtered to ${noun} that run on ${serverTypes.find((item) => item.value === server.type)?.label || server.type} ${/^\d/.test(server.version) ? server.version : server.runningVersion || server.version}.`}>
     <div className="relative">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${noun}, e.g. ${target.kind === "plugin" ? "LuckPerms" : "Lithium"}`} aria-label={`Search ${noun}`} className="pl-9" />
@@ -86,9 +108,14 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
   const [draft, setDraft] = useState<string[] | null>(null);
   const [names, setNames] = useState<Record<string, Project>>({});
   const [reviewing, setReviewing] = useState(false);
+  const [optionalDraft, setOptionalDraft] = useState<boolean | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
   const saved = useMemo(() => server.modrinthProjects || [], [server.modrinthProjects]);
   const list = draft ?? saved;
   const savedKey = saved.join(",");
+  const listKey = list.join(",");
+  const savedOptional = server.modrinthOptionalDependencies ?? false;
+  const optional = optionalDraft ?? savedOptional;
 
   const load = useCallback(async () => {
     try { setData(await api<TabData>(`/api/servers/${server.id}/modrinth`)); setError(""); }
@@ -96,10 +123,25 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
   }, [server.id]);
   // Reload when the saved list changes (after applying) or the server restarts (the image installs on start).
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load, savedKey, server.status]);
+  // What the list (with unsaved edits) will download. Debounced so adding several in a row sends one request.
+  useEffect(() => {
+    let current = true;
+    const timer = window.setTimeout(() => {
+      // Admin-only, like search: it serves editing the list.
+      if (!can.manage) return;
+      if (!listKey) { setPlan({ exact: true, projects: {} }); return; }
+      api<Plan>(`/api/servers/${server.id}/modrinth/dependencies?ids=${listKey}&optional=${optional}`)
+        .then((next) => { if (current) setPlan(next); })
+        // The list still works without it; rows fall back to the simpler compatibility check.
+        .catch(() => { if (current) setPlan(null); });
+    }, 400);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [can.manage, server.id, listKey, optional, server.runningVersion]);
 
   const known = useMemo(() => ({ ...Object.fromEntries((data?.projects || []).map((project) => [project.id, project])), ...names }), [data, names]);
   const changes = projectListChanges(saved, list, Object.fromEntries(Object.entries(known).map(([id, project]) => [id, project.title])));
-  const dirty = changes.added.length + changes.removed.length > 0;
+  const optionalChanged = optional !== savedOptional;
+  const dirty = changes.added.length + changes.removed.length > 0 || optionalChanged;
   const busy = Boolean(server.operation) || isPending(`${server.id}:settings`);
   const target = data?.target;
   const noun = target?.kind === "plugin" ? "plugins" : "mods";
@@ -117,9 +159,10 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
   async function apply() {
     const next = list;
     await track(`${server.id}:settings`, async () => {
-      await api(`/api/servers/${server.id}`, { method: "PATCH", body: JSON.stringify(toPayload({ ...fromServer(server), modrinthProjects: next })) });
+      await api(`/api/servers/${server.id}`, { method: "PATCH", body: JSON.stringify(toPayload({ ...fromServer(server), modrinthProjects: next, modrinthOptionalDependencies: optional })) });
       toast.success(`Applying ${noun}`, { description: "Backing up, then restarting so the server downloads them. It rolls back automatically if startup fails." });
       setDraft(null);
+      setOptionalDraft(null);
     });
   }
 
@@ -135,6 +178,11 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
   const byId = new Map(data.projects.map((project) => [project.id, project]));
   const rows = list.map((id) => byId.get(id) || { ...(known[id] || { id, slug: id, title: id, description: "", iconUrl: null, downloads: 0, projectUrl: "" }), compatible: true, available: true } as Installed);
   const updates = data.projects.filter((project) => project.update && saved.includes(project.id));
+  const typeLabel = serverTypes.find((item) => item.value === server.type)?.label || server.type;
+  const where = plan?.exact && plan.gameVersion ? `${typeLabel} ${plan.gameVersion}` : typeLabel;
+  const blocked = list.map((id) => ({ id, title: (byId.get(id) || known[id])?.title || id, reason: blocker(plan?.projects[id], where) })).filter((item) => item.reason);
+  // Everything the added projects bring with them, for the review.
+  const alsoDownloads = [...new Map(changes.added.length ? list.filter((id) => !saved.includes(id)).flatMap((id) => plan?.projects[id]?.installs || []).map((dependency) => [dependency.id, dependency]) : []).values()];
 
   return <div className="space-y-5 pb-20">
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -145,6 +193,8 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
             : <ul className="-mx-4 -my-2 divide-y divide-border sm:-mx-5">
               {rows.map((project) => {
                 const pendingAdd = !saved.includes(project.id);
+                const projectPlan = plan?.projects[project.id];
+                const problem = blocker(projectPlan, where) ?? (!project.available ? "No longer available on Modrinth. Remove it, or the server won't start." : !projectPlan && !project.compatible ? "No build for this server type and version. Remove it, or the server won't start." : undefined);
                 return <li key={project.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
                   <ProjectIcon url={project.iconUrl} />
                   <div className="min-w-0 flex-1">
@@ -153,19 +203,28 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
                       {pendingAdd && <span className="rounded-full border border-success/40 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-success">To add</span>}
                       {project.update && !pendingAdd && <span className="inline-flex items-center gap-1 text-xs text-warning"><ArrowUpCircle className="size-3.5" />{project.update} on restart</span>}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {!project.available ? "No longer available on Modrinth. Remove it, or the server won't start."
-                        : !project.compatible ? `No build for this server type and version. Remove it, or the server won't start.`
-                          : pendingAdd ? "Downloads when you apply."
-                            : project.installed ? `${project.installed.version} · ${project.installed.file}` : server.status === "running" ? "Not found in the folder yet. It downloads on the next start." : "Downloads when the server starts."}
+                    <p className={cn("mt-0.5 text-xs", problem ? "text-destructive" : "truncate text-muted-foreground")}>
+                      {problem
+                        || (pendingAdd ? `Downloads when you apply${projectPlan?.version ? ` (${projectPlan.version})` : ""}.`
+                          : project.installed ? `${project.installed.version} · ${project.installed.file}` : server.status === "running" ? "Not found in the folder yet. It downloads on the next start." : "Downloads when the server starts.")}
                     </p>
+                    {projectPlan && projectPlan.installs.length > 0 && <p className="mt-0.5 text-xs text-muted-foreground">Also installs {listNames(projectPlan.installs)}</p>}
+                    {projectPlan && projectPlan.optional.length > 0 && <p className="mt-0.5 text-xs text-muted-foreground">Optional: {listNames(projectPlan.optional)}</p>}
+                    {projectPlan && projectPlan.conflicts.length > 0 && <p className="mt-0.5 text-xs text-warning">Doesn&apos;t work with {listNames(projectPlan.conflicts)}</p>}
                   </div>
-                  {(!project.available || !project.compatible) && <TriangleAlert className="size-4 shrink-0 text-destructive" aria-label="Won't load" />}
+                  {problem && <TriangleAlert className="size-4 shrink-0 text-destructive" aria-label="Won't load" />}
                   {can.manage && <Button size="icon-sm" variant="ghost" onClick={() => remove(project.id)} aria-label={`Remove ${project.title}`}><X /></Button>}
                 </li>;
               })}
             </ul>}
           {changes.removed.length > 0 && <p className="mt-4 text-xs text-muted-foreground">To remove: {changes.removed.join(", ")}. Their files are deleted on the next start.</p>}
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+            <Label htmlFor="optional-dependencies" className="flex-1 flex-col items-start gap-0.5 font-normal leading-5">
+              <span className="block font-medium">Also install optional dependencies</span>
+              <span className="block text-xs text-muted-foreground">Extra {noun} that add features to the ones on the list. If one has no file for this version, the server won&apos;t start.</span>
+            </Label>
+            <Switch id="optional-dependencies" checked={optional} disabled={!can.manage} onCheckedChange={(checked) => setOptionalDraft(checked === savedOptional ? null : checked)} />
+          </div>
         </Section>
         {data.other.length > 0 && <Section title="Other files" description={`Jars in ${target.folder}/ that aren't on the list: dependencies the server downloaded for you, and anything added by hand. Manage them in Files.`}>
           <ul className="space-y-2 text-sm">
@@ -182,12 +241,15 @@ export function PluginsTab({ server }: { server: MinecraftServer }) {
 
     <div className={dirty ? "pb-safe fixed inset-x-0 bottom-14 z-30 border-t border-border bg-background/95 px-4 py-3 backdrop-blur md:bottom-0 lg:left-64" : "hidden"} role="region" aria-label="Unsaved changes">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 lg:px-4">
-        <p className="text-sm"><span className="font-medium">{[changes.added.length ? `${changes.added.length} to add` : "", changes.removed.length ? `${changes.removed.length} to remove` : ""].filter(Boolean).join(", ")}</span><span className="text-muted-foreground"> · applied with one restart</span></p>
+        <p className="text-sm"><span className="font-medium">{[changes.added.length ? `${changes.added.length} to add` : "", changes.removed.length ? `${changes.removed.length} to remove` : "", optionalChanged ? `optional dependencies ${optional ? "on" : "off"}` : ""].filter(Boolean).join(", ")}</span><span className="text-muted-foreground"> · applied with one restart</span></p>
         <div className="flex gap-2"><Button variant="ghost" onClick={() => setDraft(null)}><Undo2 />Discard</Button><Button onClick={() => setReviewing(true)} disabled={busy}>Review and apply</Button></div>
       </div>
     </div>
     <ConfirmDialog open={reviewing} onOpenChange={setReviewing} title={`Update ${server.name}'s ${noun}?`} confirmLabel="Apply and restart" onConfirm={() => void apply()}>
+      {blocked.length > 0 && <p className="rounded-lg border border-destructive/30 bg-danger-soft p-2.5 text-destructive">{listNames(blocked)} won&apos;t load, so the server won&apos;t start with this list. If you apply anyway, the previous setup is restored automatically.</p>}
       {changes.added.length > 0 && <p><span className="font-medium text-foreground">Add:</span> {changes.added.join(", ")}</p>}
+      {alsoDownloads.length > 0 && <p><span className="font-medium text-foreground">Also downloads:</span> {alsoDownloads.map((dependency) => dependency.title).join(", ")}</p>}
+      {optionalChanged && <p><span className="font-medium text-foreground">Optional dependencies:</span> {optional ? "installed from now on" : "no longer installed"}</p>}
       {changes.removed.length > 0 && <p><span className="font-medium text-foreground">Remove:</span> {changes.removed.join(", ")}</p>}
       <p>The server restarts and downloads them.{server.playersOnline ? ` ${server.playersOnline} player${server.playersOnline === 1 ? " is" : "s are"} online and will be disconnected after a ${server.stopAnnounceDelaySeconds}s warning.` : ""} {target.kind === "plugin" ? "Plugins" : "Mods"} run code on your server, so only add ones you trust.</p>
       {openingPorts.map((preset) => <p key={preset.id} className="rounded-lg border border-border p-2.5">{preset.label} needs port {preset.target}{preset.protocol === "udp" ? " (UDP)" : ""}{preset.sameNumber ? "" : " or a free one near it"}; it&apos;s opened with this restart. {preset.setup(target.kind === "mod")}</p>)}

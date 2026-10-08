@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { modrinthServerConfig } from "@/lib/docker";
 import { searchProjects } from "@/lib/modrinth";
+import { effectiveVersion } from "@/lib/modrinth-core";
 import { assertServerId } from "@/lib/paths";
 import { apiError } from "@/lib/responses";
 import { guardRoute } from "@/lib/request-guard";
@@ -14,6 +15,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const server = await modrinthServerConfig(assertServerId((await context.params).id));
     const query = (request.nextUrl.searchParams.get("q") || "").slice(0, 100);
     const offset = Math.max(0, Math.min(1000, Number(request.nextUrl.searchParams.get("offset")) || 0));
-    return NextResponse.json(await searchProjects(query, server.type, server.version, offset));
+    return NextResponse.json(await searchProjects(query, server.type, effectiveVersion(server.version, server.runningVersion) ?? server.version, offset));
   } catch (error) { return apiError(error); }
 }

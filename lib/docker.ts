@@ -19,14 +19,14 @@ import { giveTreeToGame } from "@/lib/ownership";
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isNumericSeed, parseSeedReply } from "@/lib/chunkbase";
 import { isModrinthId, modrinthEnv, modrinthTarget } from "@/lib/modrinth-core";
-import { parsePlayerList, parseStatusCount } from "@/lib/players";
+import { parsePlayerList, parseStatusCount, parseStatusVersion } from "@/lib/players";
 import { type ExtraPort, parseExtraPorts, portBindings, portClash, usedPorts, withPluginPorts } from "@/lib/ports";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { ensureGameNetwork, gameHostConfig } from "@/lib/game-network";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
 import { serverHealth, serverStatus, STARTUP_LOOP_RESTARTS, startupSetupError } from "@/lib/server-status";
-import { getServerControl, markBackupRun, markMaintenance, markStoppedByPanel, markScheduledAttempt, markStartupFailure, markTaskRun, recordEvent, recordObservedStatus, removeServerControl, serverRenames, setServerName } from "@/lib/store";
+import { getServerControl, markBackupRun, markMaintenance, markStoppedByPanel, markScheduledAttempt, markStartupFailure, markTaskRun, recordEvent, recordObservedStatus, recordRunningVersion, removeServerControl, serverRenames, setServerName } from "@/lib/store";
 import { describeSchedule, type ScheduledTask, taskAction, warningMinutes } from "@/lib/tasks";
 import { GAME_MODES, JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
@@ -67,6 +67,8 @@ type ServerConfig = {
   useMeowiceFlags: boolean;
   pauseWhenEmptySeconds: number;
   modrinthProjects: string[];
+  /** Also download projects' optional dependencies, not just required ones. */
+  modrinthOptionalDependencies: boolean;
   gameMode: GameMode;
   pvp: boolean;
   hardcore: boolean;
@@ -100,6 +102,8 @@ type ServerSummary = ServerMeta & {
   players: string[];
   restartCount: number;
   backupCount: number;
+  /** The Minecraft version the server last reported running; differs from `version` for LATEST and SNAPSHOT. */
+  runningVersion?: string;
   /** When the newest backup in the repository was made, whether or not it ran on this machine. */
   lastBackupAt?: string;
   /** The picked server icon, when one was picked (see lib/server-icons.ts for the default). */
@@ -149,7 +153,7 @@ let serverListCache: { at: number; value?: ServerSummary[]; pending?: Promise<Se
 let serverListGeneration = 0;
 const demoGlobal = globalThis as typeof globalThis & { __blockyDemo?: DemoState };
 
-const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[], gameMode: "survival" as const, pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: 16, gamePortUdp: false, extraPorts: [] as ExtraPort[] };
+const demoDefaults = { javaVersion: "auto" as const, cpuLimit: 0, players: [] as string[], whitelist: [] as string[], seed: "", customProperties: "", initialMemoryPercent: 25, maxMemoryPercent: 75, rollingLogMaxFiles: 30, viewDistance: 8, simulationDistance: 6, stopAnnounceDelaySeconds: 10, useMeowiceFlags: true, pauseWhenEmptySeconds: 300, modrinthProjects: [] as string[], modrinthOptionalDependencies: false, gameMode: "survival" as const, pvp: true, hardcore: false, allowFlight: false, commandBlocks: false, onlineMode: true, spawnProtection: 16, gamePortUdp: false, extraPorts: [] as ExtraPort[] };
 
 function demoState(): DemoState {
   demoGlobal.__blockyDemo ??= {
@@ -275,6 +279,7 @@ function metaFromLabels(labels: Record<string, string>): ServerMeta {
     useMeowiceFlags: labels["panel.useMeowiceFlags"] !== "false",
     pauseWhenEmptySeconds: Number(labels["panel.pauseWhenEmptySeconds"] || 300),
     modrinthProjects: decodeList(labels["panel.modrinthProjects"]).filter(isModrinthId),
+    modrinthOptionalDependencies: labels["panel.modrinthOptionalDependencies"] === "true",
     gameMode: GAME_MODES.includes(gameMode) ? gameMode : "survival",
     pvp: flag("pvp", "pvp", true),
     hardcore: flag("hardcore", "hardcore", false),
@@ -315,6 +320,7 @@ function labelsFor(meta: ServerMeta) {
     "panel.useMeowiceFlags": String(meta.useMeowiceFlags),
     "panel.pauseWhenEmptySeconds": String(meta.pauseWhenEmptySeconds),
     "panel.modrinthProjects": encodeList(meta.modrinthProjects ?? []),
+    "panel.modrinthOptionalDependencies": String(Boolean(meta.modrinthOptionalDependencies)),
     "panel.gameMode": meta.gameMode,
     "panel.pvp": String(meta.pvp),
     "panel.hardcore": String(meta.hardcore),
@@ -364,7 +370,7 @@ function createOptions(meta: ServerMeta, rconPassword = randomBytes(24).toString
     `MODE=${meta.gameMode}`, `PVP=${meta.pvp}`, `HARDCORE=${meta.hardcore}`,
     `ALLOW_FLIGHT=${meta.allowFlight ? "TRUE" : "FALSE"}`, `ENABLE_COMMAND_BLOCK=${meta.commandBlocks}`,
     `ONLINE_MODE=${meta.onlineMode ? "TRUE" : "FALSE"}`, `SPAWN_PROTECTION=${meta.spawnProtection}`,
-    ...modrinthEnv(meta.modrinthProjects ?? []),
+    ...modrinthEnv(meta.modrinthProjects ?? [], meta.modrinthOptionalDependencies),
   ];
   if (meta.whitelist.length) env.push(`WHITELIST=${meta.whitelist.join(",")}`, "ENFORCE_WHITELIST=TRUE", "OVERRIDE_WHITELIST=TRUE");
   if (meta.seed) env.push(`SEED=${meta.seed}`);
@@ -466,7 +472,7 @@ async function readServerMeta(id: string): Promise<ServerMeta | undefined> {
     if (stored.game !== undefined && stored.game !== "minecraft") return undefined;
     // Defaults (and gameplay settings still in custom properties) from a label-less read, then the saved values.
     // Ports are re-read through the same checks as a label, never trusted as stored.
-    return { ...metaFromLabels({ "panel.customProperties": typeof stored.customProperties === "string" ? stored.customProperties : "" }), ...stored, gamePortUdp: stored.gamePortUdp === true, extraPorts: parseExtraPorts(JSON.stringify(stored.extraPorts ?? [])), id, dataPath: dockerServerDataPath(id) } as ServerMeta;
+    return { ...metaFromLabels({ "panel.customProperties": typeof stored.customProperties === "string" ? stored.customProperties : "" }), ...stored, gamePortUdp: stored.gamePortUdp === true, modrinthOptionalDependencies: stored.modrinthOptionalDependencies === true, extraPorts: parseExtraPorts(JSON.stringify(stored.extraPorts ?? [])), id, dataPath: dockerServerDataPath(id) } as ServerMeta;
   } catch { return undefined; }
 }
 
@@ -585,7 +591,11 @@ async function onlinePlayers(info: ContainerInfo) {
     // ("Thread RCON Client ... started/shutting down"), so names are fetched over RCON only when someone is
     // online, and at most once a minute.
     const container = docker.getContainer(info.Id);
-    const online = parseStatusCount(await timed(execOutput(container, ["mc-monitor", "status", "--json", "--timeout", "3s"]), "the player count"));
+    const status = await timed(execOutput(container, ["mc-monitor", "status", "--json", "--timeout", "3s"]), "the player count");
+    const online = parseStatusCount(status);
+    // Remembered so a server set to LATEST can show (and check plugins against) the version it runs, even while stopped.
+    const version = parseStatusVersion(status);
+    if (version && info.Labels?.["panel.id"]) void recordRunningVersion(info.Labels["panel.id"], version).catch(() => undefined);
     const namesFresh = cached?.namesAt && Date.now() - cached.namesAt < 60_000 && cached.playersOnline === online;
     if (!online) result = { online: 0, names: [] };
     else if (namesFresh) result = { online, names: cached.players };
@@ -692,7 +702,7 @@ async function collectServers(): Promise<ServerSummary[]> {
     const health = serverHealth(facts);
     const status = serverStatus(facts);
     const [stats, players, backups] = await Promise.all([liveStats(info), onlinePlayers(info), backupFacts(meta.id)]);
-    const summary: ServerSummary = { ...meta, ...describeServer(meta), status, health, statusMessage: statusMessage(details, status, control?.startupFailure), ...stats, diskUsageBytes: worldSize(meta.id), playersOnline: players.online, players: players.names, restartCount: details.RestartCount, backupCount: backups.count, lastBackupAt: backups.newestAt };
+    const summary: ServerSummary = { ...meta, ...describeServer(meta), status, health, statusMessage: statusMessage(details, status, control?.startupFailure), ...stats, diskUsageBytes: worldSize(meta.id), playersOnline: players.online, players: players.names, restartCount: details.RestartCount, backupCount: backups.count, lastBackupAt: backups.newestAt, runningVersion: control?.runningVersion };
     void recordObservedStatus(meta.id, status, meta.name, details.RestartCount).catch(() => undefined);
     // Servers created before configs were saved to disk get their server.json written once, so they can be reattached later.
     if (!metaWritten.has(meta.id) && isServerId(meta.id)) void saveServerMeta(meta).catch(() => undefined);
@@ -1040,9 +1050,10 @@ async function rerollUnlocked(info: ContainerInfo, oldMeta: ServerMeta, nextMeta
 
 /** What the Plugins/Mods tab needs to know about a server. */
 export async function modrinthServerConfig(id: string) {
-  if (isDemo()) { const server = demoServer(id); return { type: server.type, version: server.version, modrinthProjects: server.modrinthProjects || [], port: server.port, gamePortUdp: server.gamePortUdp, extraPorts: server.extraPorts }; }
+  if (isDemo()) { const server = demoServer(id); return { type: server.type, version: server.version, runningVersion: server.runningVersion, modrinthProjects: server.modrinthProjects || [], modrinthOptionalDependencies: server.modrinthOptionalDependencies, port: server.port, gamePortUdp: server.gamePortUdp, extraPorts: server.extraPorts }; }
   const meta = metaFromLabels((await findInfo(id)).Labels);
-  return { type: meta.type, version: meta.version, modrinthProjects: meta.modrinthProjects, port: meta.port, gamePortUdp: meta.gamePortUdp, extraPorts: meta.extraPorts };
+  const runningVersion = (await getServerControl(id).catch(() => undefined))?.runningVersion;
+  return { type: meta.type, version: meta.version, runningVersion, modrinthProjects: meta.modrinthProjects, modrinthOptionalDependencies: meta.modrinthOptionalDependencies, port: meta.port, gamePortUdp: meta.gamePortUdp, extraPorts: meta.extraPorts };
 }
 
 export async function updateServer(id: string, config: ServerConfig) {

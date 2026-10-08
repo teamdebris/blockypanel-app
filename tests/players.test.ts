@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parsePlayerList, parseStatusCount } from "../lib/players.ts";
+import { parsePlayerList, parseStatusCount, parseStatusVersion } from "../lib/players.ts";
 import { nextScheduledBackupAt } from "../lib/schedule.ts";
 
 test("parses the modern list format", () => {
@@ -32,4 +32,13 @@ test("reads the player count from mc-monitor's JSON", () => {
   assert.equal(parseStatusCount('{"players":{"online":3}}'), 3);
   assert.equal(parseStatusCount('{"server_info":{"players":{"max":20}}}'), 0);
   assert.throws(() => parseStatusCount("not json"));
+});
+
+test("reads the running Minecraft version from mc-monitor's JSON", () => {
+  assert.equal(parseStatusVersion('{"server_info":{"version":{"name":"Paper 26.3","protocol":777},"players":{"online":0}}}'), "26.3");
+  assert.equal(parseStatusVersion('{"server_info":{"version":{"name":"1.21.8","protocol":772}}}'), "1.21.8");
+  assert.equal(parseStatusVersion('{"version":{"name":"26w14a"}}'), "26w14a");
+  assert.equal(parseStatusVersion('{"server_info":{"version":{"name":"Velocity 3.3.0-SNAPSHOT"}}}'), undefined, "a proxy's own version isn't Minecraft's");
+  assert.equal(parseStatusVersion('{"server_info":{"version":{"name":"Requires MC 1.20-1.21"}}}'), undefined);
+  assert.equal(parseStatusVersion('{"server_info":{}}'), undefined);
 });
