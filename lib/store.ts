@@ -43,6 +43,8 @@ type ServerControl = {
   observedRestartCount?: number;
   /** When the panel last stopped the server on purpose, so that stop isn't shown as a crash. */
   panelStoppedAt?: string;
+  /** Why the panel stopped a server stuck restarting on a setup error, shown until it starts again. */
+  startupFailure?: { message: string; at: string };
   tasks?: ScheduledTask[];
   /**
    * A rename after the container was made. Docker labels can't change on a running container, so
@@ -218,6 +220,10 @@ export async function recordObservedStatus(id: string, status: string, serverNam
 
 export async function markStoppedByPanel(id: string, at = new Date().toISOString()) {
   return mutate((state) => { ensureServer(state, id).panelStoppedAt = at; });
+}
+
+export async function markStartupFailure(id: string, message: string, at = new Date().toISOString()) {
+  return mutate((state) => { ensureServer(state, id).startupFailure = { message, at }; });
 }
 
 export async function setServerName(id: string, name: string, container: string) {

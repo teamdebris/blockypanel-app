@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (2026-10-07)
+
+- A server that can't start because of a setting, such as a mod or plugin with no file for its Minecraft
+  version, is now stopped after a few tries and shows why, instead of restarting forever.
+
 ## 0.2.1 (2026-10-07)
 
 - Obsidian backups: a backup key whose address can't be reached is now replaced on the next try, instead

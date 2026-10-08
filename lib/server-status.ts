@@ -55,3 +55,21 @@ export function serverHealth(facts: Pick<ContainerFacts, "state" | "health">) {
   if (facts.state !== "running") return "stopped";
   return facts.health || "running";
 }
+
+/** Restarts in a row, with the same setup error each time, before the panel stops the loop. */
+export const STARTUP_LOOP_RESTARTS = 2;
+
+/**
+ * The setup error that ended the container's last run, if it was one that will happen again on every
+ * try: the image's helper rejecting its settings, like a Modrinth project with no file for this loader
+ * and Minecraft version. Docker's restart policy would retry forever, so the panel stops the server
+ * instead. Network errors aren't matched: those can clear up on their own.
+ */
+export function startupSetupError(logs: string) {
+  const text = logs.replace(/\x1b\[[0-9;]*m/g, "");
+  // Docker's log holds earlier runs too; only the last one counts.
+  const lastRun = text.slice(Math.max(0, text.lastIndexOf("[init] Running as")));
+  const match = [...lastRun.matchAll(/ERROR\s*:\s*Invalid parameter provided for '([\w-]+)' command:\s*(.+)/g)].at(-1);
+  if (!match) return undefined;
+  return { command: match[1], message: match[2].trim() };
+}
