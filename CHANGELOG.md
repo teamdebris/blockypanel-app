@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.5 (2026-10-08)
+
+- The Plugins/Mods tab shows what each one downloads with it, its optional dependencies, and plugins it
+  doesn't work with. If one of them, or something it needs, has no release for the server's Minecraft
+  version, it says so before you apply, instead of the server failing to start.
+- New switch in the Plugins/Mods tab to also install optional dependencies. Off by default.
+- Servers set to LATEST show the Minecraft version they're running, like "Paper 26.3 (latest)", and
+  plugin search and checks use it.
+- Paper and Purpur searches no longer list plugins that only support Bukkit, which the server can't
+  download.
+
 ## 0.2.2 (2026-10-07)
 
 - A server that can't start because of a setting, such as a mod or plugin with no file for its Minecraft
