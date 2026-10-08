@@ -633,9 +633,9 @@ async function stopStartupLoop(meta: ServerMeta, containerId: string, details: D
     });
     const folder = modrinthTarget(meta.type)?.label;
     const fix = error.command === "modrinth" && folder ? `Remove it in ${folder} or pick another Minecraft version, then start the server.` : "Fix that setting, then start the server.";
-    const message = `Stopped after ${details.RestartCount + 1} failed starts: ${error.message.replace(/\.$/, "")}. ${fix}`;
-    await markStartupFailure(meta.id, message).catch(() => undefined);
-    await recordEvent(meta.id, "status", `${meta.name} kept failing to start, so it was stopped. ${message}`, "error").catch(() => undefined);
+    const reason = `after ${details.RestartCount + 1} failed starts: ${error.message.replace(/\.$/, "")}. ${fix}`;
+    await markStartupFailure(meta.id, `Stopped ${reason}`).catch(() => undefined);
+    await recordEvent(meta.id, "status", `${meta.name} was stopped ${reason}`, "error").catch(() => undefined);
     invalidateServerList();
     return true;
   } finally {
