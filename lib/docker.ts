@@ -18,15 +18,15 @@ import { activeOperation, type ActiveOperation, type FinishedOperation, lastOper
 import { giveTreeToGame } from "@/lib/ownership";
 import { assertServerId, dockerServerDataPath, isServerId, serverBackupPath, serverDataPath, serverMetaPath, serverRootPath, STORAGE_ROOT, storagePath } from "@/lib/paths";
 import { isNumericSeed, parseSeedReply } from "@/lib/chunkbase";
-import { isModrinthId, modrinthEnv } from "@/lib/modrinth-core";
+import { isModrinthId, modrinthEnv, modrinthTarget } from "@/lib/modrinth-core";
 import { parsePlayerList, parseStatusCount } from "@/lib/players";
 import { type ExtraPort, parseExtraPorts, portBindings, portClash, usedPorts, withPluginPorts } from "@/lib/ports";
 import { levelName, withProperty, worldFolders } from "@/lib/world";
 import { ensureGameNetwork, gameHostConfig } from "@/lib/game-network";
 import { snapshotsToForget } from "@/lib/retention";
 import { scheduledBackupDue, shouldAlertFailure, waitingForStartup } from "@/lib/schedule";
-import { serverHealth, serverStatus } from "@/lib/server-status";
-import { getServerControl, markBackupRun, markMaintenance, markStoppedByPanel, markScheduledAttempt, markTaskRun, recordEvent, recordObservedStatus, removeServerControl, serverRenames, setServerName } from "@/lib/store";
+import { serverHealth, serverStatus, STARTUP_LOOP_RESTARTS, startupSetupError } from "@/lib/server-status";
+import { getServerControl, markBackupRun, markMaintenance, markStoppedByPanel, markScheduledAttempt, markStartupFailure, markTaskRun, recordEvent, recordObservedStatus, removeServerControl, serverRenames, setServerName } from "@/lib/store";
 import { describeSchedule, type ScheduledTask, taskAction, warningMinutes } from "@/lib/tasks";
 import { GAME_MODES, JAVA_VERSIONS, managedPropertyKeys, SERVER_TYPES, updateServerSchema } from "@/lib/validation";
 
@@ -602,11 +602,55 @@ async function onlinePlayers(info: ContainerInfo) {
   return result;
 }
 
-function statusMessage(details: Docker.ContainerInspectInfo, status: ServerSummary["status"]) {
+function statusMessage(details: Docker.ContainerInspectInfo, status: ServerSummary["status"], startupFailure?: { message: string; at: string }) {
   if (status === "running") return "Ready for players";
   if (status === "starting") return details.State.Health?.Log?.at(-1)?.Output?.trim() || "Installing and starting";
+  // Only while it's about this run: starting the server again clears it.
+  if (status === "failed" && startupFailure && Date.parse(startupFailure.at) >= Date.parse(details.State.StartedAt)) return startupFailure.message;
   if (status === "failed") return details.State.Error || details.State.Health?.Log?.at(-1)?.Output?.trim() || `Container exited with code ${details.State.ExitCode}.`;
   return "Stopped by administrator";
+}
+
+const stoppingLoops = new Set<string>();
+
+/**
+ * Stops a server whose container keeps restarting on a setup error that every retry repeats, such as
+ * a mod with no file for the server's Minecraft version (see startupSetupError). Docker's restart
+ * policy would otherwise retry forever. Returns whether it stopped the server. It isn't marked as a
+ * panel stop, so the server shows as failed, with the reason.
+ */
+async function stopStartupLoop(meta: ServerMeta, containerId: string, details: Docker.ContainerInspectInfo) {
+  if (!details.State.Restarting || details.RestartCount < STARTUP_LOOP_RESTARTS || activeOperation(meta.id) || stoppingLoops.has(meta.id)) return false;
+  stoppingLoops.add(meta.id);
+  try {
+    const container = docker.getContainer(containerId);
+    const logs = await timed(container.logs({ follow: false, stdout: true, stderr: true, tail: 100 }), "the startup log");
+    const error = startupSetupError(logs.toString("utf8"));
+    if (!error) return false;
+    await container.stop({ t: 10 }).catch(async (stopError) => {
+      const latest = await container.inspect().catch(() => undefined);
+      if (latest?.State.Running || latest?.State.Restarting) throw stopError;
+    });
+    const folder = modrinthTarget(meta.type)?.label;
+    const fix = error.command === "modrinth" && folder ? `Remove it in ${folder} or pick another Minecraft version, then start the server.` : "Fix that setting, then start the server.";
+    const message = `Stopped after ${details.RestartCount + 1} failed starts: ${error.message.replace(/\.$/, "")}. ${fix}`;
+    await markStartupFailure(meta.id, message).catch(() => undefined);
+    await recordEvent(meta.id, "status", `${meta.name} kept failing to start, so it was stopped. ${message}`, "error").catch(() => undefined);
+    invalidateServerList();
+    return true;
+  } finally {
+    stoppingLoops.delete(meta.id);
+  }
+}
+
+/** Stops the servers stuck restarting on a setup error, for the scheduler: the list only checks while someone has the panel open. */
+export async function stopStartupLoops() {
+  if (isDemo()) return;
+  for (const info of await managedContainers()) {
+    if (info.State !== "restarting") continue;
+    const details = await timed(docker.getContainer(info.Id).inspect(), "a container inspect").catch(() => undefined);
+    if (details) await stopStartupLoop(metaFromLabels(info.Labels), info.Id, details).catch((error) => console.error("Blocky startup loop check failed", error));
+  }
 }
 
 /** Extra details for the UI. */
@@ -641,12 +685,14 @@ async function collectServers(): Promise<ServerSummary[]> {
   const items = await managedContainers();
   const summaries = await Promise.all(items.map(async (info) => {
     const meta = metaFromLabels(info.Labels);
-    const details = await timed(docker.getContainer(info.Id).inspect(), "a container inspect");
-    const facts = { state: info.State, health: details.State.Health?.Status, exitCode: details.State.ExitCode, oomKilled: details.State.OOMKilled, startedAt: details.State.StartedAt, panelStoppedAt: (await getServerControl(meta.id).catch(() => undefined))?.panelStoppedAt };
+    let details = await timed(docker.getContainer(info.Id).inspect(), "a container inspect");
+    if (await stopStartupLoop(meta, info.Id, details)) details = await timed(docker.getContainer(info.Id).inspect(), "a container inspect");
+    const control = await getServerControl(meta.id).catch(() => undefined);
+    const facts = { state: details.State.Status, health: details.State.Health?.Status, exitCode: details.State.ExitCode, oomKilled: details.State.OOMKilled, startedAt: details.State.StartedAt, panelStoppedAt: control?.panelStoppedAt };
     const health = serverHealth(facts);
     const status = serverStatus(facts);
     const [stats, players, backups] = await Promise.all([liveStats(info), onlinePlayers(info), backupFacts(meta.id)]);
-    const summary: ServerSummary = { ...meta, ...describeServer(meta), status, health, statusMessage: statusMessage(details, status), ...stats, diskUsageBytes: worldSize(meta.id), playersOnline: players.online, players: players.names, restartCount: details.RestartCount, backupCount: backups.count, lastBackupAt: backups.newestAt };
+    const summary: ServerSummary = { ...meta, ...describeServer(meta), status, health, statusMessage: statusMessage(details, status, control?.startupFailure), ...stats, diskUsageBytes: worldSize(meta.id), playersOnline: players.online, players: players.names, restartCount: details.RestartCount, backupCount: backups.count, lastBackupAt: backups.newestAt };
     void recordObservedStatus(meta.id, status, meta.name, details.RestartCount).catch(() => undefined);
     // Servers created before configs were saved to disk get their server.json written once, so they can be reattached later.
     if (!metaWritten.has(meta.id) && isServerId(meta.id)) void saveServerMeta(meta).catch(() => undefined);
