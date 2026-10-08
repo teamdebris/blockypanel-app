@@ -1,6 +1,6 @@
 import "server-only";
 import { cloudTick } from "@/lib/cloud";
-import { runScheduledBackups, runScheduledTasks } from "@/lib/docker";
+import { runScheduledBackups, runScheduledTasks, stopStartupLoops } from "@/lib/docker";
 import { runOffsiteSchedule } from "@/lib/offsite";
 
 const schedulerGlobal = globalThis as typeof globalThis & { __blockyScheduler?: NodeJS.Timeout; __blockySchedulerRunning?: boolean; __blockyOffsiteRunning?: boolean; __blockyTasksRunning?: boolean; __blockyCloudRunning?: boolean };
@@ -9,6 +9,9 @@ async function tick() {
   // A first (full) backup of a large world can take longer than the tick interval; never overlap runs.
   if (schedulerGlobal.__blockySchedulerRunning) return;
   schedulerGlobal.__blockySchedulerRunning = true;
+  // A server stuck restarting on a bad setting is stopped even when nobody has the panel open.
+  try { await stopStartupLoops(); }
+  catch (error) { console.error("Blocky startup loop check failed", error); }
   try { await runScheduledBackups(); }
   catch (error) { console.error("Blocky scheduled backup check failed", error); }
   finally { schedulerGlobal.__blockySchedulerRunning = false; }
