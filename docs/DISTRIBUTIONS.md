@@ -2,19 +2,23 @@
 
 Both editions are maintained in this repository and report the version in the root `package.json`.
 They currently have separate UIs and server implementations. Sharing a release number does not imply
-feature parity or interchangeable panel data.
+feature parity or interchangeable panel data. This table describes the source tree; consult the notes
+for your installed release. Version 0.2.6 predates the expanded Windows features below.
 
 | Feature | Linux Docker | Native Windows x64 |
 | --- | --- | --- |
 | Paper and Vanilla | Yes | Yes |
-| Purpur, Fabric, Quilt, Forge, NeoForge | Yes | No |
+| Purpur, Fabric, Quilt, Forge, NeoForge | Yes | Yes; native installers |
 | Start, stop, restart, live console | Yes | Yes |
 | Server settings and local backups | Yes | Yes |
-| Incremental backups with restic | Yes | No; folder copies |
-| Off-site backups and Blocky Cloud | Yes | No |
+| Incremental backups with restic | Yes | Yes; optional, alongside existing folder copies |
+| Off-site folder and S3 copies, passphrase recovery | Yes | Yes |
+| Blocky Cloud account linking and Obsidian backups | Yes | No |
 | Accounts, roles, two-factor sign-in | Yes | No; local access only |
-| File manager, SFTP, Modrinth installation | Yes | No |
-| Scheduled tasks and backups | Yes | No |
+| File manager and Modrinth installation | Yes | Yes; stop the server before file/JAR changes |
+| SFTP | Yes | No |
+| Scheduled restarts, commands, messages and backups | Yes | Yes; panel must remain open |
+| World import, reset, seed-map link and activity | Yes | Yes |
 | Requires Docker | Yes | No |
 
 ## Linux Docker
@@ -27,7 +31,7 @@ Release images are published to `ghcr.io/teamdebris/blockypanel-app:<version>` f
 docker pull ghcr.io/teamdebris/blockypanel-app:0.2.6
 ```
 
-`latest` moves on release tags; `main` and `dev` retain their existing development tags.
+`latest` moves on stable release tags; `main` and `dev` retain their existing development tags.
 
 ## Windows executable
 
@@ -37,7 +41,9 @@ software on first start. No Docker, WSL, or separate Node installation is needed
 
 Data stays in `%LOCALAPPDATA%\Blocky Panel`, including `servers.json`, `servers`, `backups`, and
 `runtime`. Existing Windows installations keep using this directory. Docker and Windows panel metadata
-and backup formats are different; do not point them at the same storage directory.
+are different; do not point them at the same storage directory. Existing Windows folder backups remain
+usable when incremental storage is enabled. See the [Windows guide](WINDOWS.md) for backup keys,
+off-site recovery, and current limitations.
 
 The Windows panel listens only on localhost and has no accounts or remote administration. Minecraft
 players can connect through the server's game port. Windows builds are currently unsigned.

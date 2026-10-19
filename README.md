@@ -9,7 +9,10 @@
 
 A self-hosted web panel for running Minecraft servers, distributed as a Linux Docker image or a native Windows executable.
 
-The Docker edition has the full feature set. The Windows edition is a local-only MVP with Paper and Vanilla support; the editions do **not** yet have feature parity. See [distributions and Windows setup](docs/DISTRIBUTIONS.md).
+The Windows edition runs locally with native server installers, files, Modrinth, scheduling, world tools,
+and encrypted local/off-site backups. Accounts, SFTP, and Blocky Cloud remain Docker-only, so the
+editions do **not** yet have full feature parity. See [distributions](docs/DISTRIBUTIONS.md) and the
+[Windows guide](docs/WINDOWS.md). This describes the source tree; read your release notes for shipped features.
 
 > **Beta.** Blocky is young: expect rough edges and keep backups on. What it doesn't do yet is in [Known issues](docs/KNOWN-ISSUES.md).
 

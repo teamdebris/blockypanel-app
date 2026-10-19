@@ -129,7 +129,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             # latest only moves on a release tag, so a merge to main can't reach people who didn't pin.
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
             type=semver,pattern={{version}}
@@ -201,6 +201,8 @@ jobs:
           node scripts/check-release.mjs
           node scripts/release-notes.mjs "$RUNNER_TEMP/release-notes.md"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Blocky Panel $TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+            release_flags=()
+            if [[ "$TAG" == *-* ]]; then release_flags+=(--prerelease); fi
+            gh release create "$TAG" --verify-tag --title "Blocky Panel $TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${release_flags[@]}"
           fi
           gh release upload "$TAG" windows-release/* compose.yaml compose.caddy.yaml compose.build.yaml --clobber

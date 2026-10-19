@@ -8,8 +8,10 @@ Please report security issues privately through GitHub: on the repository's **Se
 
 The guidance below describes the Docker edition. The native Windows edition in `windows/` runs Java
 as the current Windows user, listens only on `127.0.0.1`, and has no accounts or remote administration.
-It checks the request Host and requires a custom header for changes. Its backups are local folder
-copies, without the Docker edition's restic encryption or off-site copies. See
+It checks the request Host and Origin and requires a custom header for changes. File management and
+JAR changes require a stopped server and reject links/junctions and Windows reserved paths. Backups
+can use encrypted restic repositories; off-site credentials are sealed with `secret.key` and recovery
+passphrases are not saved. Native plugins and mods run as the Windows user. See
 [distribution differences](docs/DISTRIBUTIONS.md).
 
 Blocky Panel controls Docker through its socket, and access to the Docker socket is equivalent to root on the host. Anyone with an **admin** account in the panel effectively controls the machine. So:
