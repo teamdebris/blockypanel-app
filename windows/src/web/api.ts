@@ -1,12 +1,15 @@
 export type Status = "stopped" | "installing" | "starting" | "running" | "stopping" | "crashed";
 export type Server = {
-  id: string; name: string; software: "paper" | "vanilla"; version: string; memoryMb: number; port: number;
+  id: string; name: string; software: "paper" | "purpur" | "vanilla" | "fabric" | "quilt" | "forge" | "neoforge"; version: string; memoryMb: number; port: number;
   motd: string; maxPlayers: number; difficulty: "peaceful" | "easy" | "normal" | "hard"; icon: string; createdAt: string;
+  gameMode: "survival" | "creative" | "adventure" | "spectator"; pvp: boolean; hardcore: boolean; allowFlight: boolean; commandBlocks: boolean;
+  onlineMode: boolean; spawnProtection: number; viewDistance: number; simulationDistance: number; seed: string; operation?: string;
   status: Status; step?: string; progress?: number; players: string[]; startedAt?: number; memoryUsedMb?: number; lastError?: string; address: string;
 };
 export type State = { version: string; dataRoot: string; servers: Server[] };
 export type Line = { at: number; text: string; kind: "out" | "err" | "command" | "panel" };
-export type Backup = { name: string; createdAt: string; sizeBytes: number; kind: "manual" | "safety" };
+export type Backup = { name: string; createdAt: string; sizeBytes: number; kind: "manual" | "safety" | "scheduled"; storage?: "copy" | "incremental" };
+export const SOFTWARE_LABELS = { paper: "Paper", purpur: "Purpur", vanilla: "Vanilla", fabric: "Fabric", quilt: "Quilt", forge: "Forge", neoforge: "NeoForge" } as const;
 
 /** JSON API calls. Changes carry the verification header the server requires. */
 export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {

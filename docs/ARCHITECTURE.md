@@ -37,6 +37,14 @@ A Next.js (App Router) app that manages Minecraft servers as Docker containers, 
 
 ## Conventions and gotchas
 
+The native Windows distribution lives in `windows/`: its own React/esbuild UI, Node HTTP API, native
+Java lifecycle/installers, and Node SEA packaging. It reuses pure helpers from `lib/tasks.ts`,
+`lib/modrinth-core.ts`, `lib/archive.ts`, `lib/world.ts`, `lib/chunkbase.ts`, `lib/secret-box.ts`, and the
+off-site restic/index helpers. Its own TypeScript check and integration suite run on Windows in CI.
+`windows/src/server/operations.ts` locks server mutations; `json-store.ts` serializes atomic metadata
+writes; `restic.ts` manages the native backup runtime; `offsite.ts` handles encrypted credentials and
+copy/recovery. See [the Windows guide](WINDOWS.md) and [distribution comparison](DISTRIBUTIONS.md).
+
 - **The server's configuration lives in Docker labels** (`panel.*`), with a copy in each server's `server.json` so a removed server can be reattached. There's no database of servers; the container list is the source of truth.
 - **Access control is deny-by-default.** A new route is unreachable until it's added to `API_ACCESS` in `lib/roles.ts`, and `tests/accounts.test.ts` fails if a route file exists without an entry. Checks that depend on the request body, like the admin-only `update` action, happen in the handler.
 - **Tests use Node's built-in runner** (`npm test`) and import `lib/*.ts` directly with type stripping. So the pure modules use relative `.ts` imports and no constructor parameter properties.

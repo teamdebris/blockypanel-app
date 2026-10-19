@@ -5,10 +5,13 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "lib": [
-      "ES2023",
+      "ESNext",
       "DOM",
       "DOM.Iterable"
     ],

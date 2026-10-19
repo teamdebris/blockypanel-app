@@ -2,8 +2,11 @@ import { execFile } from "node:child_process";
 import { createServer, VERSION } from "./http";
 import { stopAll } from "./minecraft";
 import { DATA_ROOT } from "./paths";
+import { startScheduler, stopScheduler } from "./scheduler";
+import { claimDataRoot } from "./instance";
 
 const FIRST_PORT = Number(process.env.BLOCKY_PORT) || 3080;
+let releaseInstance = async () => {};
 
 /** Listens on 127.0.0.1 only, trying the next port if one is taken. */
 async function listen(port: number, tries = 10): Promise<{ port: number; server: ReturnType<typeof createServer> }> {
@@ -18,7 +21,17 @@ async function listen(port: number, tries = 10): Promise<{ port: number; server:
 }
 
 async function main() {
+  const instance = await claimDataRoot(FIRST_PORT);
+  if (instance.existing) {
+    const url = `http://127.0.0.1:${instance.port}`;
+    console.log(`Blocky Panel is already running for this data folder. Open ${url}`);
+    if (process.env.BLOCKY_NO_BROWSER !== "1") execFile("cmd.exe", ["/c", "start", "", url], { windowsHide: true }, () => undefined);
+    return;
+  }
+  releaseInstance = instance.release;
   const { port, server } = await listen(FIRST_PORT);
+  await instance.setPort(port);
+  startScheduler();
   const url = `http://127.0.0.1:${port}`;
   console.log("");
   console.log(`  Blocky Panel ${VERSION} for Windows`);
@@ -33,15 +46,18 @@ async function main() {
   const shutdown = async () => {
     if (closing) return;
     closing = true;
+    stopScheduler();
     console.log("  Stopping servers…");
     server.close();
     await stopAll(8_000);
+    await releaseInstance();
     process.exit(0);
   };
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const) process.on(signal, () => void shutdown());
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  await releaseInstance();
   console.error("Blocky Panel couldn't start:", error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
