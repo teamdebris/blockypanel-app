@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Zombie">
+<title>Blocky Zombie</title>
+<defs>
+<clipPath id="cube"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath>
+<clipPath id="front"><path d="M8 16 32 24v32L8 48Z"/></clipPath>
+<clipPath id="side"><path d="M32 24 56 16v32L32 56Z"/></clipPath>
+<clipPath id="top"><path d="M32 8 56 16 32 24 8 16Z"/></clipPath>
+</defs>
+<g clip-path="url(#cube)">
+<path fill="#587D61" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#86AC77" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#9FC58B" d="M32 8 56 16 32 24 8 16Z"/>
+<g clip-path="url(#top)">
+<path fill="#B4D39B" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#83B879" d="m39 10 17 6-24 8-11-4Z"/>
+</g>
+<g clip-path="url(#front)"><g transform="matrix(0.631578947 0.210526316 0 1.032258065 8 16)">
+<path fill="#536B49" d="M0 0h38v6l-8 1-5-2-7 2-8-1-10 2Z"/>
+<path fill="#F3EBD2" d="M8 12h8v6H8ZM23 12h8v6h-8Z"/>
+<path fill="#344C3F" d="M11 13h3v5h-3ZM26 13h3v5h-3Z"/>
+<path fill="#607D59" d="m14 25 5-2 5 2-5 3Z"/></g></g>
+<g clip-path="url(#side)"><g transform="matrix(0.631578947 -0.210526316 0 1.032258065 32 24)"></g></g>
+<path fill="none" stroke="#B4D39B" stroke-width="0.8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>

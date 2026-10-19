@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Ender Chest">
+<title>Blocky Ender Chest</title>
+<defs>
+<clipPath id="cube"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath>
+<clipPath id="front"><path d="M8 16 32 24v32L8 48Z"/></clipPath>
+<clipPath id="side"><path d="M32 24 56 16v32L32 56Z"/></clipPath>
+<clipPath id="top"><path d="M32 8 56 16 32 24 8 16Z"/></clipPath>
+</defs>
+<g clip-path="url(#cube)">
+<path fill="#142934" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#253A43" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#33555B" d="M32 8 56 16 32 24 8 16Z"/>
+<g clip-path="url(#top)">
+<path fill="#477174" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#234148" d="m39 10 17 6-24 8-11-4Z"/>
+</g>
+<g clip-path="url(#front)"><g transform="matrix(0.631578947 0.210526316 0 1.280000000 8 16)">
+<path fill="#0E242D" d="M0 9h38v4H0Z"/>
+<path fill="#2C7D79" d="M3 0h3v25H3ZM33 0h3v25h-3Z"/>
+<path fill="#3C6C6B" d="M7 17h24v3H7Z"/>
+<path fill="#113A3E" d="m16 12 7-1 6 6-6 7-8-4Z"/>
+<path fill="#59D7B1" d="m18 14 5-1 4 4-4 5-5-3Z"/>
+<path fill="#BBF4D7" d="m21 15 3 2-2 2-3-2Z"/></g></g>
+<g clip-path="url(#side)"><g transform="matrix(0.631578947 -0.210526316 0 1.280000000 32 24)"><path fill="#0E242D" d="M0 9h38v4H0Z"/><path fill="#1E6A6A" d="M0 17h38v3H0Z"/><path fill="#266360" d="M32 0h3v25h-3Z"/></g></g>
+<path fill="none" stroke="#477174" stroke-width="0.8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>

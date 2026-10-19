@@ -6,6 +6,12 @@ Please report security issues privately through GitHub: on the repository's **Se
 
 ## What to know before you run it
 
+The guidance below describes the Docker edition. The native Windows edition in `windows/` runs Java
+as the current Windows user, listens only on `127.0.0.1`, and has no accounts or remote administration.
+It checks the request Host and requires a custom header for changes. Its backups are local folder
+copies, without the Docker edition's restic encryption or off-site copies. See
+[distribution differences](docs/DISTRIBUTIONS.md).
+
 Blocky Panel controls Docker through its socket, and access to the Docker socket is equivalent to root on the host. Anyone with an **admin** account in the panel effectively controls the machine. So:
 
 - **Keep the panel off the open internet** unless it's behind HTTPS. The Compose file publishes port 3000 on every interface so a home network can reach it; on a machine with a public address, set `BLOCKY_BIND_ADDRESS=127.0.0.1` and put a reverse proxy (Caddy, nginx) or a VPN (Tailscale, WireGuard) in front of it. See "Serve it over HTTPS" in the README.

@@ -49,3 +49,7 @@ next-env.d.ts
 /servers/
 /backups/
 /caddy/
+
+# Windows application dependencies and generated executable
+/windows/node_modules/
+/windows/dist/

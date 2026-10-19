@@ -13,3 +13,6 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+
+# The native Windows application has a separate build.
+windows

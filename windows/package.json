@@ -1,0 +1,30 @@
+{
+  "name": "blockypanel-windows",
+  "version": "0.2.6",
+  "private": true,
+  "description": "Blocky Panel as a single Windows executable: Minecraft servers run natively, no Docker.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build.mjs --no-exe && node dist/server.cjs",
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --test tests/smoke.test.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^0.500.0",
+    "postject": "^1.0.0-alpha.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  }
+}

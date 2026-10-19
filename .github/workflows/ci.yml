@@ -43,6 +43,7 @@ jobs:
           test "$(BLOCKY_BIND_ADDRESS=127.0.0.1 sftp_host)" = "127.0.0.1"
           test "$(BLOCKY_BIND_ADDRESS=127.0.0.1 BLOCKY_SFTP_BIND_ADDRESS=0.0.0.0 sftp_host)" = "0.0.0.0"
       - run: npm ci
+      - run: node scripts/check-release.mjs
       # Known high or critical advisories in what ships fail the build (developer-only tools don't).
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
@@ -52,7 +53,7 @@ jobs:
   # Each architecture builds on its own native runner (no emulation), pushed by digest; `publish`
   # then joins them under the tags. arm64 used to build under QEMU, which took most of the time.
   image:
-    needs: check
+    needs: [check, windows]
     if: github.event_name != 'pull_request'
     strategy:
       fail-fast: true
@@ -146,3 +147,60 @@ jobs:
         env:
           REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.meta.outputs.version }}
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - run: node scripts/check-release.mjs
+      - run: npm run windows:install
+      - run: npm --prefix windows audit --audit-level=high
+      - run: npm run windows:check
+      - run: npm run windows:build
+      - run: npm run windows:test
+        env:
+          BLOCKY_TEST_EXE: ${{ github.workspace }}\windows\dist\BlockyPanel.exe
+      - name: Package Windows release asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows/dist/release | Out-Null
+          Copy-Item windows/dist/BlockyPanel.exe windows/dist/release/BlockyPanel-windows-x64.exe
+          $checksum = (Get-FileHash windows/dist/release/BlockyPanel-windows-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  BlockyPanel-windows-x64.exe" | Set-Content windows/dist/release/SHA256SUMS.txt -Encoding utf8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BlockyPanel-windows-x64
+          path: windows/dist/release/*
+          if-no-files-found: error
+
+  release:
+    needs: [publish, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: BlockyPanel-windows-x64
+          path: windows-release
+      - name: Publish both distributions in one release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/check-release.mjs
+          node scripts/release-notes.mjs "$RUNNER_TEMP/release-notes.md"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "Blocky Panel $TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release upload "$TAG" windows-release/* compose.yaml compose.caddy.yaml compose.build.yaml --clobber

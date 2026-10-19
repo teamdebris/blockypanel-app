@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 (2026-10-19)
+
+- Include the native Windows application in `windows/`, using the same release version as the Docker panel.
+- Build Linux amd64/arm64 Docker images and a Windows x64 executable from the same release tag.
+- Document the Windows MVP feature differences; this release does not add feature parity.
+
 ## 0.2.5 (2026-10-08)
 
 - The Plugins/Mods tab shows what each one downloads with it, its optional dependencies, and plugins it

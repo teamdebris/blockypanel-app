@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Stone block">
+<title>Blocky Stone block</title>
+<path fill="#86979A" d="M6 18 32 31v31L6 49Z"/>
+<path fill="#64777D" d="M32 31 58 18v31L32 62Z"/>
+<path fill="#A7B5B7" d="M32 5 58 18 32 31 6 18Z"/>
+
+<path fill="#C3CDCB" d="M32 5 6 18l13 6 19-16Z"/>
+<path fill="#95A7AA" d="m39 8 19 10-26 13-10-5 16-8-8-4Z"/>
+<path fill="#9EACAD" d="m6 35 12 6 6 11-18-9Z"/>
+<path fill="#71878B" d="m18 41 14 7v14L19 55Z"/>
+<path fill="#536B72" d="m43 36 15-8v12l-15 8-6-4Z"/>
+<path fill="none" stroke="#D3DAD7" stroke-width="1.2" d="m6 18 26 13 26-13"/>
+</svg>

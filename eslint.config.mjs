@@ -10,6 +10,7 @@ const eslintConfig = defineConfig([
     // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
+    "windows/**", // Checked independently with windows:check and windows:test.
     "next-env.d.ts",
   ]),
   {

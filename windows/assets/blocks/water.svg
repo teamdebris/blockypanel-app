@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Water block">
+<title>Blocky Water block</title>
+<path fill="#258FBE" d="M6 18 32 31v31L6 49Z"/>
+<path fill="#0B77AA" d="M32 31 58 18v31L32 62Z"/>
+<path fill="#62C9E9" d="M32 5 58 18 32 31 6 18Z"/>
+
+<path fill="#9BE3F3" d="M32 5 6 18l13 6 20-16Z"/>
+<path fill="#46B5DC" d="m39 8 19 10-26 13-9-5 17-8-9-5Z"/>
+<path fill="#43ADD2" d="m6 34 9 5 6-2 11 5v9l-10-5-8 1-8-5Z"/>
+<path fill="#1496C7" d="m32 42 9-5 8 1 9-5v10l-10 5-7-1-9 5Z"/>
+<path fill="#157CAC" d="m6 46 15 8 11-3v11L6 49Z"/>
+<path fill="#086690" d="m32 52 13-7 13 1v3L32 62Z"/>
+<path fill="none" stroke="#B8F0FA" stroke-width="1.2" d="m6 18 26 13 26-13"/>
+</svg>

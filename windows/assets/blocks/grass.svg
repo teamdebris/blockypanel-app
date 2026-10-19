@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Grass block">
+<title>Blocky Grass block</title>
+<path fill="#9C6743" d="M6 18 32 31v31L6 49Z"/>
+<path fill="#785036" d="M32 31 58 18v31L32 62Z"/>
+<path fill="#80D650" d="M32 5 58 18 32 31 6 18Z"/>
+
+<path fill="#91E367" d="M32 5 6 18l12 6 18-16Z"/>
+<path fill="#6FC63F" d="m36 8 22 10-26 13-9-5 13-6-6-4Z"/>
+<path fill="#4AA63E" d="M6 18 32 31v9l-9-4-5 1-5-5-7-3Z"/>
+<path fill="#277E38" d="M32 31 58 18v11l-9 5-7 1-4 5-6 2Z"/>
+<path fill="#B0794D" d="m6 40 10 5 6 8-16-4ZM23 48l9 5v9l-10-5Z"/>
+<path fill="#8C5A3B" d="m39 43 11-5 8-1v12l-15 8Z"/>
+<path fill="none" stroke="#B1EE79" stroke-width="1.2" d="m6 18 26 13 26-13"/>
+</svg>

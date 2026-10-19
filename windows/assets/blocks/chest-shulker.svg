@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Blocky Shulker Box">
+<title>Blocky Shulker Box</title>
+<defs>
+<clipPath id="cube"><path d="M32 8 56 16v32L32 56 8 48V16Z"/></clipPath>
+<clipPath id="front"><path d="M8 16 32 24v32L8 48Z"/></clipPath>
+<clipPath id="side"><path d="M32 24 56 16v32L32 56Z"/></clipPath>
+<clipPath id="top"><path d="M32 8 56 16 32 24 8 16Z"/></clipPath>
+</defs>
+<g clip-path="url(#cube)">
+<path fill="#6D5C84" d="M32 24 56 16v32L32 56Z"/>
+<path fill="#9C80AD" d="M8 16 32 24v32L8 48Z"/>
+<path fill="#B89CC8" d="M32 8 56 16 32 24 8 16Z"/>
+<g clip-path="url(#top)">
+<path fill="#D4BADE" d="M32 8 8 16l13 4 18-10Z"/>
+<path fill="#A78CBA" d="m39 10 17 6-24 8-11-4Z"/>
+</g>
+<g clip-path="url(#front)"><g transform="matrix(0.631578947 0.210526316 0 1.280000000 8 16)">
+<path fill="#614F77" d="M0 9h38v3H0Z"/>
+<path fill="#BDA1CD" d="M3 13h32v10H3Z"/>
+<path fill="#9677AA" d="M3 13h32v3H3Z"/>
+<path fill="#715C89" d="m17 15 6-1 4 4-5 4-6-3Z"/>
+<path fill="#DCC9E4" d="m19 16 3-1 2 2-3 2Z"/></g></g>
+<g clip-path="url(#side)"><g transform="matrix(0.631578947 -0.210526316 0 1.280000000 32 24)"><path fill="#5B4B72" d="M0 9h38v3H0Z"/><path fill="#85709C" d="M3 13h32v10H3Z"/></g></g>
+<path fill="none" stroke="#D4BADE" stroke-width="0.8" d="m8 16 24 8 24-8"/>
+</g>
+</svg>
